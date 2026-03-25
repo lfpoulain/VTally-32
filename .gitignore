@@ -1,0 +1,79 @@
+# Arduino/PlatformIO
+.pio/
+.vscode/
+.clang_complete
+.gcc-flags.json
+*.elf
+*.hex
+*.bin
+*.map
+*.eep
+*.lss
+*.sym
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Python (if using build scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Node (if using web tools)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Documentation build
+docs/_build/
