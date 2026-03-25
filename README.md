@@ -111,6 +111,8 @@ The firmware has been modularized to make maintenance easier.
 - ESP32
 - ESP32-S3
 
+This project is also **plug-and-play** with the [Waveshare ESP32-S3-Matrix](https://www.waveshare.com/wiki/ESP32-S3-Matrix).
+
 ### Required Components
 
 - 1x ESP32 or ESP32-S3 board
