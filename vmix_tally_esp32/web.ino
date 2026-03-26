@@ -357,8 +357,9 @@ void handleConfig() {
 
     config = updatedConfig;
 
-    LOG_DEBUG("Valeurs avant sauvegarde:");
-    LOG_DEBUG("  VMix: %s:%d Input:%s", config.vmix_host, config.vmix_port, config.vmix_input);
+    LOG_INFO("Configuration mise à jour:");
+    LOG_DEBUG("  Nom: %s", config.tally_name);
+    LOG_DEBUG("  VMix: %s:8099 Input:%s", config.vmix_host, config.vmix_input);
     LOG_DEBUG("  Couleurs: Live=0x%06X Preview=0x%06X Off=0x%06X Brightness=%d",
               config.live_color, config.preview_color, config.off_color, config.brightness);
     LOG_DEBUG("  Matériel: Pin=%d Count=%d", config.led_pin, config.led_count);
