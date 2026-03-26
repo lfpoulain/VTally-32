@@ -265,6 +265,38 @@ Shows live information such as:
 & 'C:\Program Files\Arduino CLI\arduino-cli.exe' compile --fqbn esp32:esp32:esp32s3 ".\vmix_tally_esp32"
 ```
 
+### GitHub Actions CI / Releases
+
+The repository now includes this workflow:
+
+```text
+.github/workflows/firmware-release.yml
+```
+
+Behavior:
+
+- each push and pull request compiles the firmware for `ESP32` and `ESP32-S3`
+- generated `.bin` files are uploaded as GitHub Actions artifacts
+- each tag matching `v*` also creates or updates a GitHub release with both firmware targets attached
+
+#### CI artifacts
+
+On standard CI runs, download the generated firmware from the workflow artifacts:
+
+- `vtally-32-esp32-bin`
+- `vtally-32-esp32s3-bin`
+
+#### Create a release
+
+Create and push a semantic version tag such as:
+
+```powershell
+git tag v2.0.1
+git push origin v2.0.1
+```
+
+The workflow will publish the corresponding `.bin` files to the GitHub release automatically.
+
 ### Automatic upload script
 
 The repository includes this PowerShell script:

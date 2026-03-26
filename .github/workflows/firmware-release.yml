@@ -1,0 +1,106 @@
+name: Firmware Build and Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board_name: esp32
+            fqbn: esp32:esp32:esp32
+            artifact_prefix: vtally-32-esp32
+          - board_name: esp32s3
+            fqbn: esp32:esp32:esp32s3
+            artifact_prefix: vtally-32-esp32s3
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Restore Arduino cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino
+          key: ${{ runner.os }}-arduino-${{ matrix.board_name }}-${{ hashFiles('**/*.ino', '**/*.h', '**/*.cpp', '**/*.hpp') }}
+          restore-keys: |
+            ${{ runner.os }}-arduino-${{ matrix.board_name }}-
+            ${{ runner.os }}-arduino-
+
+      - name: Configure Arduino CLI
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli lib install "ArduinoJson"
+          arduino-cli lib install "Adafruit NeoPixel"
+
+      - name: Compile firmware
+        run: |
+          mkdir -p dist/${{ matrix.board_name }}
+          arduino-cli compile \
+            --fqbn ${{ matrix.fqbn }} \
+            --output-dir dist/${{ matrix.board_name }} \
+            vmix_tally_esp32
+
+      - name: Rename firmware binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist/${{ matrix.board_name }}
+          for file in *.bin; do
+            suffix="${file#vmix_tally_esp32.ino}"
+            mv "$file" "${{ matrix.artifact_prefix }}${suffix}"
+          done
+
+      - name: Upload CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_prefix }}-bin
+          path: dist/${{ matrix.board_name }}/*.bin
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download ESP32 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: vtally-32-esp32-bin
+          path: release-assets/esp32
+
+      - name: Download ESP32-S3 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: vtally-32-esp32s3-bin
+          path: release-assets/esp32s3
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-assets/esp32/*.bin
+            release-assets/esp32s3/*.bin
