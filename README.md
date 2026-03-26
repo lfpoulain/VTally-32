@@ -265,6 +265,8 @@ Shows live information such as:
 & 'C:\Program Files\Arduino CLI\arduino-cli.exe' compile --fqbn esp32:esp32:esp32s3 ".\vmix_tally_esp32"
 ```
 
+For `ESP32-S3`, the repository build flow enables `USB CDC on boot` automatically in CI and in `upload-esp32.ps1`, so the serial monitor remains available after flashing or OTA updates when using the native USB port.
+
 ### GitHub Actions CI / Releases
 
 The repository now includes this workflow:
@@ -277,7 +279,8 @@ Behavior:
 
 - each push and pull request compiles the firmware for `ESP32` and `ESP32-S3`
 - generated `.bin` files are uploaded as GitHub Actions artifacts
-- each tag matching `v*` also creates or updates a GitHub release with both firmware targets attached
+- the firmware version is read directly from `FIRMWARE_VERSION` in `vmix_tally_esp32.ino`
+- on pushes to `main` or `master`, a GitHub release is created automatically only if `FIRMWARE_VERSION` is greater than the latest existing release tag
 
 #### CI artifacts
 
@@ -293,14 +296,12 @@ Each artifact/release contains multiple binaries. For OTA updates from the web U
 
 #### Create a release
 
-Create and push a semantic version tag such as:
+To publish a new release:
 
-```powershell
-git tag v2.0.1
-git push origin v2.0.1
-```
+- update `FIRMWARE_VERSION` in `vmix_tally_esp32.ino`
+- commit and push to `main` or `master`
 
-The workflow will publish the corresponding `.bin` files to the GitHub release automatically.
+If the new firmware version is higher than the latest released version, the workflow will create the GitHub release automatically with tag `v[firmware-version]`.
 
 ### OTA update from the web UI
 
@@ -326,6 +327,7 @@ Important:
 - do **not** use `bootloader` or `partitions` binaries in the OTA form
 - OTA is intended for firmware application updates only
 - if the uploaded binary targets the wrong board, the update can fail and will be rejected by the updater
+- on `ESP32-S3`, the OTA binary should be built with `USB CDC on boot` enabled if you want logs on the native USB serial monitor after reboot
 
 ### Automatic upload script
 

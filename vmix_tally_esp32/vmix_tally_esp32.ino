@@ -50,6 +50,8 @@
 #define DEFAULT_LED_PIN 14
 #define DEFAULT_LED_COUNT 1
 
+const char* FIRMWARE_VERSION = "2.0.0";
+
 // ========================================
 // Macros de logging optimisées
 // ========================================
@@ -115,10 +117,16 @@ unsigned long rebootTime = 0;
 
 void setup() {
   Serial.begin(115200);
+#if ARDUINO_USB_CDC_ON_BOOT
+  unsigned long serialWaitStart = millis();
+  while (!Serial && (millis() - serialWaitStart) < 2000) {
+    delay(10);
+  }
+#endif
   delay(2000);
   
   LOG_INFO("\n=============================");
-  LOG_INFO("  VTally-32 v2.0.0");
+  LOG_INFO("  VTally-32 v%s", FIRMWARE_VERSION);
   LOG_INFO("=============================");
   
   // Configuration

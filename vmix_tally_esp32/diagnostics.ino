@@ -33,7 +33,7 @@ void handleDiagnostics() {
   String staIp = staConnected ? WiFi.localIP().toString() : "";
   String apIp = WiFi.softAPIP().toString();
 
-  doc["firmware_version"] = "2.0.0";
+  doc["firmware_version"] = FIRMWARE_VERSION;
   doc["tally_name"] = config.tally_name;
   doc["uptime_ms"] = millis();
   doc["uptime_human"] = formatUptime(millis());

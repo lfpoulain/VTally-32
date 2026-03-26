@@ -141,7 +141,16 @@ function Invoke-ArduinoCompile {
   )
 
   Write-Host "Compilation avec: $TargetFqbn"
-  & $ArduinoCliPath compile --fqbn $TargetFqbn $TargetSketchPath
+  $compileArgs = @('compile', '--fqbn', $TargetFqbn)
+
+  if ($TargetFqbn -eq 'esp32:esp32:esp32s3') {
+    Write-Host 'Activation USB CDC on boot pour ESP32-S3'
+    $compileArgs += @('--build-property', 'build.cdc_on_boot=1', '--build-property', 'build.usb_mode=1')
+  }
+
+  $compileArgs += $TargetSketchPath
+
+  & $ArduinoCliPath @compileArgs
 
   if ($LASTEXITCODE -ne 0) {
     throw 'La compilation a echoue, upload annule.'
