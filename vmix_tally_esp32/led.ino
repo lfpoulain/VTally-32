@@ -10,15 +10,26 @@ void applyTallyState() {
     color = config.preview_color;
   }
 
+  bool changed = false;
+
   if (config.brightness != lastBrightness) {
     strip->setBrightness(config.brightness);
     lastBrightness = config.brightness;
+    changed = true;
   }
 
-  for (int i = 0; i < config.led_count; i++) {
-    strip->setPixelColor(i, color);
+  // Vérifier si la couleur d'au moins un pixel a changé
+  if (strip->getPixelColor(0) != color) {
+    for (int i = 0; i < config.led_count; i++) {
+      strip->setPixelColor(i, color);
+    }
+    changed = true;
   }
-  strip->show();
+
+  // Ne mettre à jour le strip que si nécessaire
+  if (changed) {
+    strip->show();
+  }
 }
 
 void setTally(bool live, bool preview) {

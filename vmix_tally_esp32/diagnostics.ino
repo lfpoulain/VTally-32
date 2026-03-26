@@ -28,12 +28,13 @@ String formatUptime(unsigned long uptimeMs) {
 }
 
 void handleDiagnostics() {
-  StaticJsonDocument<1024> doc;
+  StaticJsonDocument<768> doc;
   bool staConnected = WiFi.status() == WL_CONNECTED;
   String staIp = staConnected ? WiFi.localIP().toString() : "";
   String apIp = WiFi.softAPIP().toString();
 
   doc["firmware_version"] = "2.0.0";
+  doc["tally_name"] = config.tally_name;
   doc["uptime_ms"] = millis();
   doc["uptime_human"] = formatUptime(millis());
   doc["free_heap"] = ESP.getFreeHeap();
@@ -49,17 +50,8 @@ void handleDiagnostics() {
   doc["vmix_connected"] = vmixConnected;
   doc["vmix_socket_connected"] = vmixClient.connected();
   doc["vmix_host"] = config.vmix_host;
-  doc["vmix_port"] = config.vmix_port;
-  doc["vmix_api_port"] = config.vmix_port;
-  doc["vmix_tcp_port"] = VMIX_TCP_PORT;
+  doc["vmix_port"] = 8099;
   doc["vmix_input"] = config.vmix_input;
-  doc["vmix_track_by_key"] = config.vmix_track_by_key;
-  doc["vmix_input_key"] = config.vmix_input_key;
-  doc["vmix_input_title"] = config.vmix_input_title;
-  doc["vmix_key_refresh_seconds"] = config.vmix_key_refresh_seconds;
-  doc["resolved_vmix_input"] = resolvedVMixInputNumber;
-  doc["resolved_vmix_key"] = resolvedVMixInputKey;
-  doc["resolved_vmix_title"] = resolvedVMixInputTitle;
   doc["tally_state"] = lastState;
   doc["live"] = isLive;
   doc["preview"] = isPreview;

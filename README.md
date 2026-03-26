@@ -9,25 +9,25 @@
   <img src="https://img.shields.io/badge/platform-ESP32%20%7C%20ESP32--S3-00979D?style=for-the-badge" alt="Platform">
   <img src="https://img.shields.io/badge/framework-Arduino-00979D?style=for-the-badge" alt="Framework">
   <img src="https://img.shields.io/badge/interface-Web_UI-6366F1?style=for-the-badge" alt="Web UI">
-  <img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-orange?style=for-the-badge" alt="License CC BY-NC 4.0">
+  <img src="https://img.shields.io/badge/license-NC%20Attribution-orange?style=for-the-badge" alt="License">
 </p>
 
 ---
 
 ## Overview
 
-**VTally-32** is an Arduino firmware for ESP32 that turns an ESP32 board into a **WiFi tally light for vMix**.
+**VTally-32** is an Arduino firmware project for ESP32 boards that turns an ESP32 into a **WiFi tally light for vMix**.
 
-The project provides:
+The project includes:
 
-- a **vMix TCP TALLY** connection with automatic reconnection
-- **HTTP/XML retrieval** of vMix inputs for the web interface
-- a built-in **web UI** to configure the device without recompiling
+- a **vMix TCP connection** with exponential backoff and automatic reconnection
+- an embedded **web interface** to configure the device without recompiling
+- **mDNS support** (`http://[tally-name].local`)
 - configurable **NeoPixel / WS2812B** support
-- persistent configuration through `Preferences`
-- an **AP + STA** mode for first-time setup and network recovery
-- a built-in **system diagnostics** page
-- a **build / upload workflow with `arduino-cli`**
+- persistent configuration via `Preferences`
+- an **AP + STA** workflow for first-time setup and recovery
+- a built-in **diagnostics page** in the web UI
+- a simple **build / upload workflow with `arduino-cli`**
 
 ---
 
@@ -53,53 +53,53 @@ The project provides:
 
 ### vMix Connection
 
-- **TCP TALLY** connection on fixed port `8099`
-- `SUBSCRIBE TALLY` support
-- **HTTP/XML API** requests on a configurable Web Controller port
-- automatic reconnection every 5 seconds
-- correct handling of `LIVE`, `PREVIEW`, and `LIVE+PREVIEW`
-- source selection by **number** or by **vMix `key`**
-- periodic `key -> current number` remapping so a source stays tracked even when its position changes
+- official vMix TCP protocol on fixed port `8099` (vMix API)
+- `TALLY` subscription handling
+- smart automatic reconnection with exponential backoff (up to 30s)
+- memory-leak-proof TCP socket handling
+- proper handling of `LIVE`, `PREVIEW`, and `LIVE+PREVIEW`
 
-### LED Control
+### LED Management
 
 - `Adafruit NeoPixel` support
 - compatible with WS2812 / WS2812B
-- configurable colors for `Live`, `Preview`, and `Off`
-- brightness adjustment from `0` to `255`
+- configurable `Live`, `Preview`, and `Off` colors
+- brightness control from `0` to `255`
 - configurable LED count
-- centralized visual state updates
+- highly optimized loop: renders only when states change
 
-### WiFi Networking
+### Network & WiFi Management
 
 - `AP + STA` mode
-- local access point for initial setup
-- WiFi scanning from the UI
-- silent periodic reconnection
-- automatic AP re-enable if WiFi is lost
+- custom device naming (`tally_name`) mapped to AP SSID and hostname
+- mDNS resolution (reach your device at `http://vtally-32.local`)
+- memory-safe WiFi scanning directly from the UI (limits to 15 networks)
+- silent periodic reconnection with immediate disconnect detection
+- automatic AP fallback if WiFi drops
 
 ### Reliability and Maintenance
 
-- persistent configuration with strict validation
+- PROGMEM-based static web page serving (no RAM fragmentation)
+- asynchronous, clean reboots (avoids frontend network errors)
+- persistent configuration with validation
 - structured serial logs
-- modular firmware split across `.ino` files
+- modular firmware split across multiple `.ino` files
 - integrated diagnostics page
-- automation-friendly `arduino-cli` build workflow
 
 ---
 
 ## Project Architecture
 
-The firmware has been modularized to make maintenance easier.
+The firmware was modularized to make the project easier to maintain.
 
 | File | Role |
 |---|---|
 | `vmix_tally_esp32.ino` | constants, globals, `setup()`, `loop()` |
-| `config.ino` | validation, loading, and saving configuration |
-| `wifi.ino` | WiFi connection, AP mode, reconnection |
-| `vmix.ino` | TCP socket, vMix subscription, tally parsing |
-| `led.ino` | LED state handling |
-| `web.ino` | web UI and REST endpoints |
+| `config.ino` | configuration validation, load, and save logic |
+| `wifi.ino` | WiFi connection, mDNS, access point, reconnection |
+| `vmix.ino` | TCP socket, vMix subscription, tally parsing, backoff |
+| `led.ino` | LED state management |
+| `web.ino` | web UI and REST handlers |
 | `diagnostics.ino` | `/diagnostics` endpoint and system metrics |
 
 ---
@@ -111,31 +111,29 @@ The firmware has been modularized to make maintenance easier.
 - ESP32
 - ESP32-S3
 
-This project is also **plug-and-play** with the [Waveshare ESP32-S3-Matrix](https://www.waveshare.com/wiki/ESP32-S3-Matrix).
-
-### Required Components
+### Required Parts
 
 - 1x ESP32 or ESP32-S3 board
-- 1x NeoPixel / WS2812B LED or compatible bar
+- 1x NeoPixel / WS2812B LED or compatible strip/bar
 - jumper wires
-- suitable power supply if using multiple LEDs
+- suitable external power if using several LEDs
 
 ### Default Firmware Values
 
+- Tally Name: `VTally-32`
 - LED GPIO: `14`
 - LED count: `1`
 - `Live` color: `#FF0000`
 - `Preview` color: `#00FF00`
 - `Off` color: `#000000`
 - brightness: `255`
-- AP SSID: `VTally-32`
-- AP password: `vtally32`
+- AP Password: `vtally32`
 
 ---
 
 ## Wiring
 
-### Basic Example
+### Simple Example
 
 ```text
 ESP32 / ESP32-S3      WS2812B
@@ -151,15 +149,15 @@ GND            ---->  GND
 
 ## Quick Start
 
-### 1. Flash the Firmware
+### 1. Flash the firmware
 
-You can use the Arduino IDE, but the repository is ready for `arduino-cli`.
+You can use Arduino IDE, but the repository is now ready for `arduino-cli`.
 
-### 2. Connect to the Access Point
+### 2. Connect to the access point
 
-On first boot, the device creates an AP:
+On first boot, the device creates an access point using its default name:
 
-- **SSID**: `VTally-32`
+- **SSID**: `VTally-32` (or your custom name)
 - **Password**: `vtally32`
 
 Then open:
@@ -177,86 +175,64 @@ In the **WiFi** tab:
 - enter the password
 - save
 
-The ESP will restart and join your local network.
+The ESP restarts and joins your local network.
 
 ### 4. Configure vMix
 
 In the **VMix & Colors** tab:
 
 - enter the vMix PC IP address
-- set the **HTTP / XML API port** used by the vMix Web Controller, usually `8088`
-- note that the **TCP TALLY port** is fixed to `8099`
-- choose **Fixed input** mode for the lightest and simplest behavior
-- or enable **Tracked source by key** mode to follow a source even if its number changes
-- configure either the **fixed input** or the **tracked source** depending on the selected mode
+- choose the input to monitor
 - adjust colors and brightness
+
+*Note: The TCP connection always uses port `8099`.*
 
 ---
 
 ## Web Configuration
 
-The web interface lets you control everything without changing the code.
+The web interface lets you configure the device without editing the code. You can access it via IP or via mDNS (e.g. `http://vtally-32.local`).
 
 ### `VMix & Colors` Tab
 
-| Setting | Description |
+| Parameter | Description |
 |---|---|
-| `vMix IP` | IP address of the vMix machine |
-| `vMix HTTP / XML API Port (Web Controller)` | Web Controller port used for `GET /API/?`, usually `8088` |
-| `TCP TALLY Port` | fixed TCP port used for `SUBSCRIBE TALLY`, always `8099` |
-| `Tracking mode` | `Fixed input (fast)` or `Tracked source by key` |
-| `Tracked source` | dropdown of vMix inputs fetched from the XML API, shown only in `key` mode |
-| `Fixed input` | manual input number to monitor, shown only in fixed mode |
-| `Key tracking refresh (seconds)` | remap interval for `key -> current number` when key tracking is enabled |
-| `Tracked source name` | title currently stored for the tracked `key` |
-| `Tracked key` | stable vMix identifier used to follow a source when its order changes |
-| `Live` | color shown when live |
-| `Preview` | color shown when in preview |
-| `Off` | color shown when off |
+| `VMix IP` | IP address of the vMix machine |
+| `Input Number` | input number to monitor |
+| `Live` | color shown when the input is live |
+| `Preview` | color shown when the input is in preview |
+| `Off` | color shown when the input is off |
 | `Brightness` | LED intensity from `0` to `255` |
 
-### vMix Tracking Modes
+### `Hardware & Network` Tab
 
-- **`Fixed input (fast)`**
-  - reads the `vmix_input` position directly from the `TALLY` stream
-  - minimal overhead
-  - ideal if the input order in vMix does not change
-
-- **`Tracked source by key`**
-  - the source is selected in the **Tracked source** dropdown
-  - the firmware stores the vMix `key`
-  - periodic XML API refresh resolves the `key` to the **current input number**
-  - as soon as a new number is detected for that `key`, the last tally state is **reapplied automatically**
-  - the tally stays attached to the correct source even if it moves in vMix
-
-### `Hardware` Tab
-
-| Setting | Description |
+| Parameter | Description |
 |---|---|
+| `Tally Name` | Custom name used for mDNS, Hostname, and AP SSID |
 | `LED GPIO Pin` | NeoPixel output pin |
 | `LED Count` | number of LEDs in the chain |
 
-> Any hardware change triggers an automatic restart.
+> Hardware/Network changes trigger an automatic restart.
 
 ### `WiFi` Tab
 
 - scan available networks
-- select a network or enter the SSID manually
-- save the password
-- automatic restart
+- select or manually enter the SSID
+- save the WiFi password
+- automatic restart after applying the settings
 
 ### `Diagnostics` Tab
 
-Displays live:
+Shows live information such as:
 
+- tally name
 - uptime
-- free / minimum / maximum allocatable heap
+- free heap / minimum heap / largest alloc block
 - WiFi mode
 - AP / STA state
 - SSID, STA IP, AP IP, RSSI
-- vMix state and socket state
-- **HTTP API** target and **TCP TALLY** target
-- monitored input, tracking mode, `key`, and resolved input
+- vMix connection and socket state
+- vMix target and monitored input
 - current tally state
 - active LED configuration
 
@@ -264,7 +240,7 @@ Displays live:
 
 ## Build and Upload
 
-### `arduino-cli` Dependencies
+### `arduino-cli` dependencies
 
 ```powershell
 & 'C:\Program Files\Arduino CLI\arduino-cli.exe' config init --overwrite
@@ -275,7 +251,7 @@ Displays live:
 & 'C:\Program Files\Arduino CLI\arduino-cli.exe' lib install "Adafruit NeoPixel"
 ```
 
-### Manual Compile
+### Compile manually
 
 #### ESP32
 
@@ -289,9 +265,9 @@ Displays live:
 & 'C:\Program Files\Arduino CLI\arduino-cli.exe' compile --fqbn esp32:esp32:esp32s3 ".\vmix_tally_esp32"
 ```
 
-### Automatic Upload Script
+### Automatic upload script
 
-The repository includes a PowerShell script:
+The repository includes this PowerShell script:
 
 ```text
 upload-esp32.ps1
@@ -299,30 +275,30 @@ upload-esp32.ps1
 
 Script features:
 
-- automatic detection of a newly connected COM port
+- automatic COM port detection when the board is plugged in
 - manual override with `-Port COMx`
-- compile + upload in one command
-- automatic target correction if the detected chip differs, for example `ESP32-S3`
+- compile + upload in a single command
+- automatic board fallback if the detected chip is different, for example `ESP32-S3`
 
-#### Recommended Usage
+#### Recommended usage
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\upload-esp32.ps1
 ```
 
-#### Force a Port
+#### Force a port
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\upload-esp32.ps1 -Port COM3
 ```
 
-#### Force the Board Target
+#### Force a board target
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\upload-esp32.ps1 -Fqbn esp32:esp32:esp32s3
 ```
 
-#### Increase the Device Detection Timeout
+#### Increase plug-in wait time
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\upload-esp32.ps1 -WaitTimeoutSeconds 60
@@ -338,20 +314,18 @@ The header changes visually depending on the current state:
 
 | State | Badge |
 |---|---|
-| disconnected | `⚠ Disconnected` |
-| connected | `✓ Connected` |
-| live | `🔴 LIVE` |
-| preview | `🟢 PREVIEW` |
+| disconnected | `Disconnected` |
+| connected | `Connected` |
+| live | `LIVE` |
+| preview | `PREVIEW` |
 
 ### UI Highlights
 
-- modern and responsive design
-- real-time configuration
-- built-in WiFi scan
-- vMix source selection by name with a dropdown
-- stable source tracking by `key`
+- modern responsive layout
+- real-time configuration updates
+- integrated WiFi scanning
 - diagnostics page without external tools
-- restart from the interface
+- reboot action from the interface
 
 ---
 
@@ -362,14 +336,13 @@ The header changes visually depending on the current state:
 | Endpoint | Method | Description |
 |---|---|---|
 | `/` | `GET` | full web interface |
-| `/config` | `GET` | read current configuration |
+| `/config` | `GET` | read configuration |
 | `/config` | `POST` | update configuration |
-| `/vmix/inputs` | `GET` | fetch the vMix input list through the XML API |
 | `/status` | `GET` | real-time tally state |
 | `/diagnostics` | `GET` | detailed system metrics |
 | `/scan` | `GET` | scan WiFi networks |
 | `/wifi` | `POST` | save WiFi configuration |
-| `/reboot` | `POST` | restart the device |
+| `/reboot` | `POST` | reboot the device |
 
 ### Example `GET /status`
 
@@ -379,37 +352,9 @@ The header changes visually depending on the current state:
   "live": false,
   "preview": true,
   "vmix_host": "192.168.1.100",
-  "vmix_port": 8088,
   "vmix_input": "3",
   "wifi_ssid": "StudioWiFi",
   "wifi_ip": "192.168.1.50"
-}
-```
-
-`vmix_port` refers to the **HTTP/XML API port**. The TCP tally stream always uses `8099`.
-
-### Example `GET /vmix/inputs`
-
-```json
-{
-  "selected_input": "3",
-  "selected_key": "55cbe357-a801-4d54-8ff2-08ee68766fae",
-  "selected_title": "LateNightNews",
-  "track_by_key": true,
-  "inputs": [
-    {
-      "number": "1",
-      "title": "Camera 1",
-      "key": "26cae087-b7b6-4d45-98e4-de03ab4feb6b",
-      "type": "Capture"
-    },
-    {
-      "number": "3",
-      "title": "LateNightNews",
-      "key": "55cbe357-a801-4d54-8ff2-08ee68766fae",
-      "type": "VirtualSet"
-    }
-  ]
 }
 ```
 
@@ -418,6 +363,7 @@ The header changes visually depending on the current state:
 ```json
 {
   "firmware_version": "2.0.0",
+  "tally_name": "Cam-1",
   "uptime_human": "0d 00h 12m 05s",
   "free_heap": 231456,
   "wifi_mode": "AP+STA",
@@ -430,17 +376,8 @@ The header changes visually depending on the current state:
   "vmix_connected": true,
   "vmix_socket_connected": true,
   "vmix_host": "192.168.1.100",
-  "vmix_port": 8088,
-  "vmix_api_port": 8088,
-  "vmix_tcp_port": 8099,
+  "vmix_port": 8099,
   "vmix_input": "3",
-  "vmix_track_by_key": true,
-  "vmix_input_key": "55cbe357-a801-4d54-8ff2-08ee68766fae",
-  "vmix_input_title": "LateNightNews",
-  "vmix_key_refresh_seconds": 10,
-  "resolved_vmix_input": 3,
-  "resolved_vmix_key": "55cbe357-a801-4d54-8ff2-08ee68766fae",
-  "resolved_vmix_title": "LateNightNews",
   "tally_state": "PREVIEW",
   "led_pin": 14,
   "led_count": 1,
@@ -462,14 +399,13 @@ Example:
 
 ```text
 [INFO] Configuration loaded:
+[DEBUG]   Nom: Cam-1
 [DEBUG]   WiFi: StudioWiFi
-[DEBUG]   VMix API: 192.168.1.100:8088 TCP TALLY:8099 Input:3 TrackByKey:YES Refresh:10s
-[NET] AP started: http://192.168.4.1
-[NET] WiFi connected: StudioWiFi (192.168.1.50)
-[VMIX] Connecting TCP TALLY to vMix 192.168.1.100:8099...
-[VMIX] Tracked source resolved: 55cbe357-a801-4d54-8ff2-08ee68766fae -> input 3 (LateNightNews)
-[VMIX] vMix connected and subscribed successfully
-[INFO] TALLY: OFF → PREVIEW [Input 3]
+[DEBUG]   VMix: 192.168.1.100:8099 Input:3
+[NET] mDNS démarré. Accès via http://Cam-1.local
+[NET] WiFi connecté: StudioWiFi (192.168.1.50)
+[VMIX] vMix connecté et abonné avec succès
+[INFO] TALLY: OFF -> PREVIEW [Input 3]
 ```
 
 ---
@@ -478,6 +414,7 @@ Example:
 
 ```text
 .
+├── LICENSE
 ├── README.md
 ├── upload-esp32.ps1
 └── vmix_tally_esp32
@@ -495,28 +432,31 @@ Example:
 ## Roadmap
 
 - continued web UI improvements
-- simpler diagnostics export
+- easier diagnostics export
 - broader hardware support across ESP32 boards
-- even more automated flashing and debugging tools
+- more automation for flashing and debugging
 
 ---
 
 ## License
 
-This project is distributed under the **CC BY-NC 4.0** license.
+This project is distributed under the **VTally-32 Non-Commercial Attribution License 1.0**.
 
-This allows:
+You may:
 
-- use
-- modification
-- redistribution
+- use the project for personal, educational, research, and other non-commercial purposes
+- modify the code
+- redistribute original or modified versions
 
-Under the following conditions:
+You must:
 
-- mandatory attribution to **LFPoulain**
-- preservation of the author credit
-- indication of any modifications made
-- **no commercial use**
+- always credit the original author: `LFPoulain`
+- keep the license text with redistributed copies
+- clearly mark modified versions as modified
+
+You may not:
+
+- use the project commercially without prior written permission
 
 See [LICENSE](LICENSE) for the full text.
 
@@ -524,5 +464,5 @@ See [LICENSE](LICENSE) for the full text.
 
 <p align="center">
   Developed by <strong>LFPoulain</strong> for the vMix community.<br>
-  If this project helps you, a ⭐ on GitHub is always appreciated.
+  If this project helps you, consider giving it a star.
 </p>

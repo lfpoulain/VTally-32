@@ -1,25 +1,36 @@
-Creative Commons Attribution-NonCommercial 4.0 International
+VTally-32 Non-Commercial Attribution License 1.0
  
 Copyright (c) 2024 LFPoulain
  
-This repository is licensed under the Creative Commons Attribution-NonCommercial 4.0 International license (CC BY-NC 4.0).
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, and distribute the Software for personal, educational,
+research, evaluation, and other non-commercial purposes, subject to the
+following conditions:
  
-You are free to:
-- Share — copy and redistribute the material in any medium or format
-- Adapt — remix, transform, and build upon the material
+1. Attribution is required.
+   Any use, modification, redistribution, publication, public presentation,
+   or derivative work based on this Software must clearly credit the original
+   author as follows: "Original author: LFPoulain".
  
-Under the following terms:
-- Attribution — You must give appropriate credit to LFPoulain, keep the author notice, provide a link to the license, and indicate if changes were made.
-- NonCommercial — You may not use the material for commercial purposes.
-- No additional restrictions — You may not apply legal terms or technological measures that legally restrict others from doing anything the license permits.
+2. This copyright notice, this license text, and the required attribution
+   notice must be included in all copies or substantial portions of the
+   Software, whether in source or binary form, and in any associated
+   documentation where attribution is normally provided.
  
-Recommended attribution:
-- Original author: LFPoulain
-- Project: VTally-32
-- Repository: https://github.com/lfpoulain/VTally-32
+3. Commercial use is not permitted without prior written permission from the
+   copyright holder. Commercial use includes, without limitation, selling,
+   licensing, sublicensing, paid distribution, integration into a paid
+   product or service, or use primarily intended for commercial advantage or
+   monetary compensation.
  
-Human-readable summary:
-https://creativecommons.org/licenses/by-nc/4.0/
+4. Modified versions must be clearly marked as modified and must not be
+   misrepresented as the original Software.
  
-Full legal code:
-https://creativecommons.org/licenses/by-nc/4.0/legalcode
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
