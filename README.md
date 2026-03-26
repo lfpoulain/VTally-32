@@ -267,41 +267,6 @@ Shows live information such as:
 
 For `ESP32-S3`, the repository build flow enables `USB CDC on boot` automatically in CI and in `upload-esp32.ps1`, so the serial monitor remains available after flashing or OTA updates when using the native USB port.
 
-### GitHub Actions CI / Releases
-
-The repository now includes this workflow:
-
-```text
-.github/workflows/firmware-release.yml
-```
-
-Behavior:
-
-- each push and pull request compiles the firmware for `ESP32` and `ESP32-S3`
-- generated `.bin` files are uploaded as GitHub Actions artifacts
-- the firmware version is read directly from `FIRMWARE_VERSION` in `vmix_tally_esp32.ino`
-- on pushes to `main` or `master`, a GitHub release is created automatically only if `FIRMWARE_VERSION` is greater than the latest existing release tag
-
-#### CI artifacts
-
-On standard CI runs, download the generated firmware from the workflow artifacts:
-
-- `vtally-32-esp32-bin`
-- `vtally-32-esp32s3-bin`
-
-Each artifact/release contains multiple binaries. For OTA updates from the web UI, use only:
-
-- `vtally-32-esp32-ota.bin`
-- `vtally-32-esp32s3-ota.bin`
-
-#### Create a release
-
-To publish a new release:
-
-- update `FIRMWARE_VERSION` in `vmix_tally_esp32.ino`
-- commit and push to `main` or `master`
-
-If the new firmware version is higher than the latest released version, the workflow will create the GitHub release automatically with tag `v[firmware-version]`.
 
 ### OTA update from the web UI
 
@@ -452,29 +417,6 @@ The header changes visually depending on the current state:
 
 ---
 
-## Serial Logs
-
-Recommended baud rate:
-
-```text
-115200
-```
-
-Example:
-
-```text
-[INFO] Configuration loaded:
-[DEBUG]   Nom: Cam-1
-[DEBUG]   WiFi: StudioWiFi
-[DEBUG]   VMix: 192.168.1.100:8099 Input:3
-[NET] mDNS démarré. Accès via http://Cam-1.local
-[NET] WiFi connecté: StudioWiFi (192.168.1.50)
-[VMIX] vMix connecté et abonné avec succès
-[INFO] TALLY: OFF -> PREVIEW [Input 3]
-```
-
----
-
 ## Repository Structure
 
 ```text
@@ -491,15 +433,6 @@ Example:
     ├── web.ino
     └── diagnostics.ino
 ```
-
----
-
-## Roadmap
-
-- continued web UI improvements
-- easier diagnostics export
-- broader hardware support across ESP32 boards
-- more automation for flashing and debugging
 
 ---
 
