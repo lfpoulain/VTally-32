@@ -68,8 +68,22 @@ jobs:
           set -euo pipefail
           cd dist/${{ matrix.board_name }}
           for file in *.bin; do
-            suffix="${file#vmix_tally_esp32.ino}"
-            mv "$file" "${{ matrix.artifact_prefix }}${suffix}"
+            case "$file" in
+              vmix_tally_esp32.ino.bin)
+                target="${{ matrix.artifact_prefix }}-ota.bin"
+                ;;
+              vmix_tally_esp32.ino.bootloader.bin)
+                target="${{ matrix.artifact_prefix }}-bootloader.bin"
+                ;;
+              vmix_tally_esp32.ino.partitions.bin)
+                target="${{ matrix.artifact_prefix }}-partitions.bin"
+                ;;
+              *)
+                suffix="${file#vmix_tally_esp32.ino.}"
+                target="${{ matrix.artifact_prefix }}-${suffix}"
+                ;;
+            esac
+            mv "$file" "$target"
           done
 
       - name: Upload CI artifacts

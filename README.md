@@ -286,6 +286,11 @@ On standard CI runs, download the generated firmware from the workflow artifacts
 - `vtally-32-esp32-bin`
 - `vtally-32-esp32s3-bin`
 
+Each artifact/release contains multiple binaries. For OTA updates from the web UI, use only:
+
+- `vtally-32-esp32-ota.bin`
+- `vtally-32-esp32s3-ota.bin`
+
 #### Create a release
 
 Create and push a semantic version tag such as:
@@ -296,6 +301,31 @@ git push origin v2.0.1
 ```
 
 The workflow will publish the corresponding `.bin` files to the GitHub release automatically.
+
+### OTA update from the web UI
+
+The firmware now supports direct OTA updates from the built-in web interface.
+
+Requirements:
+
+- the device must already be running a firmware version that includes OTA support
+- the device must be reachable on the network or via its AP
+- the selected file must match the target board (`ESP32` or `ESP32-S3`)
+- use the dedicated application image ending with `-ota.bin`
+
+Procedure:
+
+- open the web interface
+- go to the `WiFi` tab
+- select the firmware file ending with `-ota.bin`
+- start the OTA update
+- wait for the upload to complete and for the ESP32 to reboot automatically
+
+Important:
+
+- do **not** use `bootloader` or `partitions` binaries in the OTA form
+- OTA is intended for firmware application updates only
+- if the uploaded binary targets the wrong board, the update can fail and will be rejected by the updater
 
 ### Automatic upload script
 
@@ -374,6 +404,7 @@ The header changes visually depending on the current state:
 | `/diagnostics` | `GET` | detailed system metrics |
 | `/scan` | `GET` | scan WiFi networks |
 | `/wifi` | `POST` | save WiFi configuration |
+| `/update` | `POST` | upload and install OTA firmware |
 | `/reboot` | `POST` | reboot the device |
 
 ### Example `GET /status`

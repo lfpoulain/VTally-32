@@ -50,6 +50,8 @@ h3{font-size:1.3em;margin:24px 0 20px;padding-bottom:12px;border-bottom:2px soli
 .diag-label{font-size:0.78em;color:#94a3b8;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.08em}
 .diag-value{font-size:1em;color:#e2e8f0;font-weight:600;word-break:break-word}
 .diag-meta{color:#94a3b8;font-size:0.88em;margin-top:14px}
+.progress-wrap{width:100%;height:12px;background:rgba(15,23,42,0.8);border-radius:999px;overflow:hidden;border:1px solid rgba(99,102,241,0.2);margin-top:14px}
+.progress-bar{height:100%;width:0;background:linear-gradient(90deg,#22c55e 0%,#16a34a 100%);transition:width 0.2s ease}
 </style></head><body>
 <div class='container'>
 <div class='header' id='header'>
@@ -100,6 +102,13 @@ h3{font-size:1.3em;margin:24px 0 20px;padding-bottom:12px;border-bottom:2px soli
 <div class='form-group'><label>Mot de passe</label><input type='password' id='pwd' placeholder='Mot de passe WiFi'></div>
 <button type='button' class='btn' onclick='saveWiFi()'>Configurer WiFi et Redémarrer</button>
 <button type='button' class='btn btn-danger' onclick='reboot()'>Redémarrer</button>
+<h3>Mise à jour OTA</h3>
+<form id='otaForm'>
+<div class='form-group'><label>Firmware `.bin`</label><input type='file' id='ota_file' accept='.bin' required></div>
+<button type='submit' class='btn btn-warning'>Installer le firmware</button>
+<div class='progress-wrap'><div class='progress-bar' id='otaProgressBar'></div></div>
+<div class='diag-meta' id='otaProgressText'>Sélectionnez le fichier `-ota.bin` correspondant à votre carte.</div>
+</form>
 </div></div>
 
 <div class='tab-content' id='tab3'>
@@ -111,6 +120,7 @@ h3{font-size:1.3em;margin:24px 0 20px;padding-bottom:12px;border-bottom:2px soli
 
 <script>
 let currentColors={live:'#ff0000',preview:'#00ff00',off:'#000000'};
+let otaUploadInProgress=false;
 function toHex(c){let h=((c||0)>>>0).toString(16).padStart(6,'0');return '#'+h;}
 document.addEventListener('DOMContentLoaded',function(){
 fetch('/config').then(r=>r.json()).then(d=>{
@@ -150,10 +160,12 @@ if(confirm('Sauvegarder la configuration matérielle? L\'ESP32 va redémarrer.')
 const data={tally_name:document.getElementById('tally_name').value,led_pin:parseInt(document.getElementById('led_pin').value),led_count:parseInt(document.getElementById('led_count').value)};
 fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(d=>{alert('Configuration sauvegardee! Redemarrage...');setTimeout(()=>location.reload(),3000);}).catch(e=>alert('Erreur: '+e));}
 });
+document.getElementById('otaForm').addEventListener('submit',uploadOTA);
 setInterval(updateStatus,1000);
 setInterval(updateDiagnostics,2000);
 });
 function updateStatus(){
+if(otaUploadInProgress)return;
 fetch('/status').then(r=>r.json()).then(d=>{
 const header=document.getElementById('header'),badge=document.getElementById('statusBadge');
 document.getElementById('info').textContent='WiFi: '+(d.wifi_ssid||'AP Mode')+' | IP: '+(d.wifi_ip||'192.168.4.1');
@@ -206,6 +218,7 @@ grid.innerHTML=items.map(item=>'<div class="diag-item"><div class="diag-label">'
 document.getElementById('diagnosticsUpdated').textContent='Dernière mise à jour: '+new Date().toLocaleTimeString();
 }
 function updateDiagnostics(){
+if(otaUploadInProgress)return;
 fetch('/diagnostics').then(r=>r.json()).then(d=>renderDiagnostics(d)).catch(e=>{const el=document.getElementById('diagnosticsUpdated');if(el){el.textContent='Erreur diagnostics';}console.error('Erreur diagnostics:',e);});
 }
 function saveWiFi(){
@@ -214,6 +227,53 @@ if(!ssid){alert('Entrez un SSID');return;}
 fetch('/wifi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:ssid,password:pwd})}).then(()=>{alert('WiFi configure! Redemarrage...');setTimeout(()=>location.reload(),3000)}).catch(e=>alert('Erreur: '+e));
 }
 function reboot(){if(confirm('Redemarrer?')){fetch('/reboot',{method:'POST'}).then(()=>alert('Redemarrage...'));}}
+function uploadOTA(e){
+e.preventDefault();
+const fileInput=document.getElementById('ota_file');
+const file=fileInput.files[0];
+const progressBar=document.getElementById('otaProgressBar');
+const progressText=document.getElementById('otaProgressText');
+if(!file){alert('Selectionnez un firmware .bin');return;}
+if(!confirm('Installer ce firmware via OTA ?'))return;
+const formData=new FormData();
+formData.append('firmware',file);
+otaUploadInProgress=true;
+progressBar.style.width='0%';
+progressText.textContent='Téléversement 0%';
+const xhr=new XMLHttpRequest();
+xhr.open('POST','/update',true);
+xhr.upload.onprogress=function(evt){
+if(evt.lengthComputable){
+const percent=Math.round((evt.loaded/evt.total)*100);
+progressBar.style.width=percent+'%';
+progressText.textContent='Téléversement '+percent+'%';
+}
+};
+xhr.onload=function(){
+otaUploadInProgress=false;
+if(xhr.status>=200&&xhr.status<300){
+progressBar.style.width='100%';
+let message='Mise a jour envoyee. Redemarrage...';
+try{const data=JSON.parse(xhr.responseText);if(data.message)message=data.message;}catch(e){}
+progressText.textContent=message;
+alert(message);
+setTimeout(()=>location.reload(),5000);
+}else{
+let error='Echec de la mise a jour OTA';
+try{const data=JSON.parse(xhr.responseText);if(data.error)error=data.error;}catch(e){}
+progressBar.style.width='0%';
+progressText.textContent=error;
+alert(error);
+}
+};
+xhr.onerror=function(){
+otaUploadInProgress=false;
+progressBar.style.width='0%';
+progressText.textContent='Erreur reseau OTA';
+alert('Erreur reseau OTA');
+};
+xhr.send(formData);
+}
 function scanWiFi(){
 const list=document.getElementById('wifiList');
 list.innerHTML='<option value="">Scan en cours...</option>';
@@ -247,7 +307,6 @@ void handleRoot() {
   LOG_WEB("Accès à la page d'accueil (GET /)");
   server.send_P(200, "text/html", index_html);
 }
-
 
 void handleConfig() {
   if (server.method() == HTTP_GET) {
@@ -469,4 +528,90 @@ void handleReboot() {
   server.send(200, "application/json", "{\"status\":\"rebooting\"}");
   pendingReboot = true;
   rebootTime = millis();
+}
+
+void handleOTAUpdate() {
+  StaticJsonDocument<256> doc;
+
+  if (!otaUploadStarted) {
+    doc["status"] = "error";
+    doc["error"] = "Aucun fichier recu";
+    String response;
+    serializeJson(doc, response);
+    server.send(400, "application/json", response);
+    return;
+  }
+
+  if (!otaUploadSuccess) {
+    doc["status"] = "error";
+    doc["error"] = otaLastError.length() > 0 ? otaLastError : "Echec de la mise a jour OTA";
+    String response;
+    serializeJson(doc, response);
+    server.send(500, "application/json", response);
+    return;
+  }
+
+  doc["status"] = "ok";
+  doc["reboot"] = true;
+  doc["message"] = "Mise a jour envoyee. Redemarrage...";
+
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+
+  pendingReboot = true;
+  rebootTime = millis();
+}
+
+void handleOTAUpload() {
+  HTTPUpload& upload = server.upload();
+
+  if (upload.status == UPLOAD_FILE_START) {
+    otaUploadStarted = true;
+    otaUploadSuccess = false;
+    otaLastError = "";
+
+    LOG_WEB("Demande de mise a jour OTA: %s", upload.filename.c_str());
+
+    if (!upload.filename.endsWith(".bin")) {
+      otaLastError = "Fichier firmware .bin requis";
+      return;
+    }
+
+    if (vmixClient.connected()) {
+      vmixClient.stop();
+    }
+    vmixConnected = false;
+    setTally(false, false);
+
+    size_t maxSketchSpace = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    if (!Update.begin(maxSketchSpace)) {
+      otaLastError = "Impossible d'initialiser la mise a jour OTA";
+      LOG_ERROR("%s", otaLastError.c_str());
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (otaLastError.length() == 0) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        otaLastError = "Erreur d'ecriture pendant la mise a jour OTA";
+        LOG_ERROR("%s", otaLastError.c_str());
+        Update.printError(Serial);
+      }
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (otaLastError.length() == 0) {
+      if (Update.end(true)) {
+        otaUploadSuccess = true;
+        LOG_INFO("Mise a jour OTA terminee: %lu octets", (unsigned long)upload.totalSize);
+      } else {
+        otaLastError = "Erreur de finalisation de la mise a jour OTA";
+        LOG_ERROR("%s", otaLastError.c_str());
+        Update.printError(Serial);
+      }
+    }
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    otaUploadSuccess = false;
+    otaLastError = "Mise a jour OTA annulee";
+    LOG_WARN("Mise a jour OTA annulee");
+  }
 }

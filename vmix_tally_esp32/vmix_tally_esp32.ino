@@ -18,6 +18,7 @@
 #include <WiFiClient.h>
 #include <WebServer.h>
 #include <ESPmDNS.h>
+#include <Update.h>
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
 #include <Preferences.h>
@@ -100,6 +101,9 @@ bool isLive = false;
 bool isPreview = false;
 String lastState = "OFF";
 int lastBrightness = -1;
+bool otaUploadStarted = false;
+bool otaUploadSuccess = false;
+String otaLastError = "";
 
 // Variables pour le redémarrage propre
 bool pendingReboot = false;
@@ -142,6 +146,7 @@ void setup() {
   server.on("/status", handleStatus);
   server.on("/diagnostics", handleDiagnostics);
   server.on("/reboot", HTTP_POST, handleReboot);
+  server.on("/update", HTTP_POST, handleOTAUpdate, handleOTAUpload);
   server.on("/favicon.ico", []() {
     server.send(204);
   });
