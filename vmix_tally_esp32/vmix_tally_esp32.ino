@@ -142,6 +142,9 @@ void setup() {
   server.on("/status", handleStatus);
   server.on("/diagnostics", handleDiagnostics);
   server.on("/reboot", HTTP_POST, handleReboot);
+  server.on("/favicon.ico", []() {
+    server.send(204);
+  });
   
   server.onNotFound([]() {
     LOG_WARN("Page non trouvée (404) : %s", server.uri().c_str());
