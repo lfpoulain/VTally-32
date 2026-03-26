@@ -4,13 +4,52 @@ void startAP() {
   LOG_NETWORK("AP démarré: %s - IP: http://%s", config.tally_name, WiFi.softAPIP().toString().c_str());
 }
 
+String sanitizeHostname(const char* sourceName) {
+  String sanitized;
+  bool lastWasHyphen = false;
+
+  for (size_t i = 0; sourceName[i] != '\0'; i++) {
+    char c = sourceName[i];
+
+    if (c >= 'A' && c <= 'Z') {
+      c = c - 'A' + 'a';
+    }
+
+    bool isAlphaNum = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+    bool isSeparator = (c == ' ' || c == '-' || c == '_' || c == '.');
+
+    if (isAlphaNum) {
+      sanitized += c;
+      lastWasHyphen = false;
+    } else if (isSeparator && !lastWasHyphen && sanitized.length() > 0) {
+      sanitized += '-';
+      lastWasHyphen = true;
+    }
+
+    if (sanitized.length() >= 31) {
+      break;
+    }
+  }
+
+  while (sanitized.endsWith("-")) {
+    sanitized.remove(sanitized.length() - 1);
+  }
+
+  if (sanitized.length() == 0) {
+    sanitized = "vtally32";
+  }
+
+  return sanitized;
+}
+
 void setupWiFi() {
   LOG_NETWORK("Configuration WiFi en cours...");
-  
-  // Configuration du nom d'hôte pour la résolution réseau et le routeur
-  WiFi.setHostname(config.tally_name);
-  
+
   WiFi.mode(WIFI_AP_STA);
+
+  String networkHostname = sanitizeHostname(config.tally_name);
+  WiFi.setHostname(networkHostname.c_str());
+  LOG_NETWORK("Nom réseau: %s (affiché: %s)", networkHostname.c_str(), config.tally_name);
 
   startAP();
 
@@ -19,6 +58,7 @@ void setupWiFi() {
 
     for (int attempt = 1; attempt <= WIFI_RETRY_COUNT && !connected; attempt++) {
       LOG_NETWORK("Tentative %d/%d - Connexion à: %s", attempt, WIFI_RETRY_COUNT, config.wifi_ssid);
+      WiFi.setHostname(networkHostname.c_str());
       WiFi.begin(config.wifi_ssid, config.wifi_password);
 
       unsigned long start = millis();
@@ -51,11 +91,13 @@ void setupWiFi() {
   } else {
     LOG_INFO("Pas de WiFi configuré - Mode AP uniquement");
   }
-  
+
   // Démarrage mDNS pour accès via nom.local
-  if (MDNS.begin(config.tally_name)) {
-    LOG_NETWORK("mDNS démarré. Accès via http://%s.local", config.tally_name);
+  if (MDNS.begin(networkHostname.c_str())) {
+    LOG_NETWORK("mDNS démarré. Accès via http://%s.local", networkHostname.c_str());
     MDNS.addService("http", "tcp", 80);
+  } else {
+    LOG_WARN("Échec démarrage mDNS avec le nom %s", networkHostname.c_str());
   }
 }
 
@@ -86,6 +128,8 @@ void checkWiFi() {
   } else {
     if (strlen(config.wifi_ssid) > 0) {
       LOG_NETWORK("Tentative reconnexion WiFi...");
+      String networkHostname = sanitizeHostname(config.tally_name);
+      WiFi.setHostname(networkHostname.c_str());
       WiFi.begin(config.wifi_ssid, config.wifi_password);
     }
 
