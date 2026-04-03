@@ -52,6 +52,9 @@ h3{font-size:1.3em;margin:24px 0 20px;padding-bottom:12px;border-bottom:2px soli
 .diag-meta{color:#94a3b8;font-size:0.88em;margin-top:14px}
 .progress-wrap{width:100%;height:12px;background:rgba(15,23,42,0.8);border-radius:999px;overflow:hidden;border:1px solid rgba(99,102,241,0.2);margin-top:14px}
 .progress-bar{height:100%;width:0;background:linear-gradient(90deg,#22c55e 0%,#16a34a 100%);transition:width 0.2s ease}
+.inline-toggle{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid rgba(99,102,241,0.3);border-radius:12px;background:rgba(15,23,42,0.8)}
+.hidden{display:none!important}
+input[type=checkbox]{width:auto;transform:scale(1.2)}
 </style></head><body>
 <div class='container'>
 <div class='header' id='header'>
@@ -73,6 +76,7 @@ h3{font-size:1.3em;margin:24px 0 20px;padding-bottom:12px;border-bottom:2px soli
 <form id='vmixForm'>
 <div class='form-group'><label>IP VMix</label><input type='text' id='host' required pattern='\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'></div>
 <div class='form-group'><label>Input Number</label><input type='number' id='input' min='1' max='999' required></div>
+<button type='button' class='btn btn-warning' onclick='forceVMixReconnect()'>Forcer une reconnexion VMix</button>
 
 <h3>Couleurs</h3>
 <div class='form-group'><label>Live</label><input type='color' id='live' class='color-input'></div>
@@ -90,7 +94,9 @@ h3{font-size:1.3em;margin:24px 0 20px;padding-bottom:12px;border-bottom:2px soli
 <form id='hardwareForm'>
 <div class='form-group'><label>Nom du Tally (Réseau et mDNS)</label><input type='text' id='tally_name' maxlength='32' required></div>
 <div class='form-group'><label>Pin GPIO de la LED</label><input type='number' id='led_pin' min='0' max='48' required></div>
-<div class='form-group'><label>Nombre de LEDs</label><input type='number' id='led_count' min='1' max='255' required></div>
+<div class='form-group' id='ledCountGroup'><label>Nombre de LEDs</label><input type='number' id='led_count' min='1' max='255' required></div>
+<div class='form-group'><label>Mode d'affichage</label><select id='display_mode'><option value='0'>Tally simple</option><option value='1'>Écran 8x8</option></select></div>
+<div class='form-group' id='liveDebugGroup'><label>Live debug</label><div class='inline-toggle'><input type='checkbox' id='live_debug'><span>Afficher un numéro d'étape debug sur la matrice 8x8</span></div></div>
 <button type='submit' class='btn btn-warning'>Sauvegarder et Redémarrer</button>
 </form></div></div>
 
@@ -122,6 +128,22 @@ h3{font-size:1.3em;margin:24px 0 20px;padding-bottom:12px;border-bottom:2px soli
 let currentColors={live:'#ff0000',preview:'#00ff00',off:'#000000'};
 let otaUploadInProgress=false;
 function toHex(c){let h=((c||0)>>>0).toString(16).padStart(6,'0');return '#'+h;}
+function updateDisplayModeUI(){
+const mode=parseInt(document.getElementById('display_mode').value||'0');
+const ledCountGroup=document.getElementById('ledCountGroup');
+const ledCountInput=document.getElementById('led_count');
+const liveDebugGroup=document.getElementById('liveDebugGroup');
+const liveDebugInput=document.getElementById('live_debug');
+if(mode===1){
+ledCountGroup.classList.add('hidden');
+ledCountInput.value=64;
+liveDebugGroup.classList.remove('hidden');
+}else{
+ledCountGroup.classList.remove('hidden');
+liveDebugGroup.classList.add('hidden');
+liveDebugInput.checked=false;
+}
+}
 document.addEventListener('DOMContentLoaded',function(){
 fetch('/config').then(r=>r.json()).then(d=>{
 if(d.tally_name){
@@ -135,6 +157,9 @@ document.getElementById('brightness').value=d.brightness;
 document.getElementById('bval').textContent=d.brightness;
 document.getElementById('led_pin').value=d.led_pin;
 document.getElementById('led_count').value=d.led_count;
+document.getElementById('display_mode').value=(d.display_mode??0).toString();
+document.getElementById('live_debug').checked=!!d.live_debug;
+updateDisplayModeUI();
 currentColors.live=toHex(d.live_color);
 currentColors.preview=toHex(d.preview_color);
 currentColors.off=toHex(d.off_color);
@@ -149,6 +174,7 @@ document.getElementById('live').addEventListener('input',e=>{currentColors.live=
 document.getElementById('preview').addEventListener('input',e=>{currentColors.preview=e.target.value;updateStatus();});
 document.getElementById('off').addEventListener('input',e=>{currentColors.off=e.target.value;updateStatus();});
 document.getElementById('brightness').addEventListener('input',e=>{document.getElementById('bval').textContent=e.target.value;});
+document.getElementById('display_mode').addEventListener('change',updateDisplayModeUI);
 document.getElementById('vmixForm').addEventListener('submit',e=>{
 e.preventDefault();
 const data={vmix_host:document.getElementById('host').value,vmix_input:document.getElementById('input').value,live_color:parseInt(currentColors.live.substring(1),16),preview_color:parseInt(currentColors.preview.substring(1),16),off_color:parseInt(currentColors.off.substring(1),16),brightness:parseInt(document.getElementById('brightness').value)};
@@ -157,7 +183,10 @@ fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:
 document.getElementById('hardwareForm').addEventListener('submit',e=>{
 e.preventDefault();
 if(confirm('Sauvegarder la configuration matérielle? L\'ESP32 va redémarrer.')){
-const data={tally_name:document.getElementById('tally_name').value,led_pin:parseInt(document.getElementById('led_pin').value),led_count:parseInt(document.getElementById('led_count').value)};
+const mode=parseInt(document.getElementById('display_mode').value);
+const data={tally_name:document.getElementById('tally_name').value,led_pin:parseInt(document.getElementById('led_pin').value),led_count:parseInt(document.getElementById('led_count').value),display_mode:mode,live_debug:document.getElementById('live_debug').checked};
+if(mode===1){data.led_count=64;}
+if(mode!==1){data.live_debug=false;}
 fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(d=>{alert('Configuration sauvegardee! Redemarrage...');setTimeout(()=>location.reload(),3000);}).catch(e=>alert('Erreur: '+e));}
 });
 document.getElementById('otaForm').addEventListener('submit',uploadOTA);
@@ -211,6 +240,9 @@ const items=[
 ['VMix cible',d.vmix_host+':8099'],
 ['Input',d.vmix_input],
 ['Tally',d.tally_state],
+['Mode affichage',d.display_mode_label||'-'],
+['Live debug',d.live_debug?'Actif':'Inactif'],
+['Étape debug',((d.debug_stage_code??0)+' - '+(d.debug_stage_label||''))],
 ['LEDs',d.led_count+' sur GPIO '+d.led_pin],
 ['Luminosité',d.brightness]
 ];
@@ -220,6 +252,9 @@ document.getElementById('diagnosticsUpdated').textContent='Dernière mise à jou
 function updateDiagnostics(){
 if(otaUploadInProgress)return;
 fetch('/diagnostics').then(r=>r.json()).then(d=>renderDiagnostics(d)).catch(e=>{const el=document.getElementById('diagnosticsUpdated');if(el){el.textContent='Erreur diagnostics';}console.error('Erreur diagnostics:',e);});
+}
+function forceVMixReconnect(){
+fetch('/vmix/reconnect',{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.message||'Reconnexion VMix demandee');setTimeout(updateDiagnostics,500);}).catch(e=>alert('Erreur: '+e));
 }
 function saveWiFi(){
 const ssid=document.getElementById('newssid').value,pwd=document.getElementById('pwd').value;
@@ -311,7 +346,7 @@ void handleRoot() {
 void handleConfig() {
   if (server.method() == HTTP_GET) {
     LOG_WEB("Demande de configuration (GET /config)");
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<768> doc;
     doc["tally_name"] = config.tally_name;
     doc["vmix_host"] = config.vmix_host;
     doc["vmix_input"] = config.vmix_input;
@@ -321,13 +356,15 @@ void handleConfig() {
     doc["brightness"] = config.brightness;
     doc["led_pin"] = config.led_pin;
     doc["led_count"] = config.led_count;
+    doc["display_mode"] = config.display_mode;
+    doc["live_debug"] = config.live_debug;
     doc["wifi_ssid"] = WiFi.SSID();
 
     String response;
     serializeJson(doc, response);
     server.send(200, "application/json", response);
   } else if (server.method() == HTTP_POST) {
-    StaticJsonDocument<512> doc;
+    StaticJsonDocument<768> doc;
     DeserializationError error = deserializeJson(doc, server.arg("plain"));
 
     if (error) {
@@ -413,6 +450,26 @@ void handleConfig() {
       updatedConfig.led_count = ledCount;
       hardwareConfigChanged = true;
     }
+    if (doc.containsKey("display_mode")) {
+      int displayMode = doc["display_mode"].as<int>();
+      if (!isValidDisplayMode(displayMode)) {
+        server.send(400, "application/json", "{\"error\":\"Mode d'affichage invalide\"}");
+        return;
+      }
+      updatedConfig.display_mode = (uint8_t)displayMode;
+      if (updatedConfig.display_mode == DISPLAY_MODE_MATRIX_8X8) {
+        updatedConfig.led_count = 64;
+      }
+      hardwareConfigChanged = true;
+    }
+    if (doc.containsKey("live_debug")) {
+      updatedConfig.live_debug = doc["live_debug"].as<bool>();
+      hardwareConfigChanged = true;
+    }
+
+    if (updatedConfig.display_mode != DISPLAY_MODE_MATRIX_8X8) {
+      updatedConfig.live_debug = false;
+    }
 
     config = updatedConfig;
 
@@ -448,6 +505,19 @@ void handleConfig() {
       server.send(200, "application/json", "{\"status\":\"ok\"}");
     }
   }
+}
+
+void handleVMixReconnect() {
+  LOG_WEB("Demande de reconnexion VMix (POST /vmix/reconnect)");
+  requestVMixReconnect();
+
+  StaticJsonDocument<192> doc;
+  doc["status"] = "ok";
+  doc["message"] = "Reconnexion VMix demandee";
+
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
 }
 
 void handleWiFi() {

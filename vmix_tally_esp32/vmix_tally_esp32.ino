@@ -28,9 +28,10 @@
 // ========================================
 #define WIFI_RETRY_COUNT 3
 #define WIFI_RETRY_TIMEOUT 5
-#define WIFI_CHECK_INTERVAL 30000
-#define VMIX_CHECK_INTERVAL 5000
-#define VMIX_RESPONSE_TIMEOUT 3000
+#define WIFI_CHECK_INTERVAL 5000
+#define VMIX_CHECK_INTERVAL 1000
+#define VMIX_MAX_RETRY_INTERVAL 5000
+#define VMIX_RESPONSE_TIMEOUT 1200
 #define VMIX_TCP_TIMEOUT 5000
 #define STATUS_UPDATE_INTERVAL 1000
 
@@ -49,6 +50,8 @@
 #define DEFAULT_BRIGHTNESS 255
 #define DEFAULT_LED_PIN 14
 #define DEFAULT_LED_COUNT 1
+#define DISPLAY_MODE_SINGLE 0
+#define DISPLAY_MODE_MATRIX_8X8 1
 
 const char* FIRMWARE_VERSION = "2.0.0";
 
@@ -91,12 +94,16 @@ struct Config {
   // Config Matérielle (Nécessite un redémarrage)
   int led_pin = DEFAULT_LED_PIN;
   int led_count = DEFAULT_LED_COUNT;
+  uint8_t display_mode = DISPLAY_MODE_SINGLE;
+  bool live_debug = false;
 } config;
 
 WiFiClient vmixClient;
 unsigned long lastVMixCheck = 0;
 unsigned long vmixCheckInterval = VMIX_CHECK_INTERVAL;
 unsigned long lastWiFiCheck = 0;
+unsigned long wifiConnectAttemptStart = 0;
+bool wifiConnectInProgress = false;
 bool vmixConnected = false;
 bool apActive = false;
 bool isLive = false;
@@ -106,6 +113,9 @@ int lastBrightness = -1;
 bool otaUploadStarted = false;
 bool otaUploadSuccess = false;
 String otaLastError = "";
+String vmixLineBuffer = "";
+uint8_t debugStageCode = 0;
+String debugStageLabel = "BOOT";
 
 // Variables pour le redémarrage propre
 bool pendingReboot = false;
@@ -154,6 +164,7 @@ void setup() {
   server.on("/status", handleStatus);
   server.on("/diagnostics", handleDiagnostics);
   server.on("/reboot", HTTP_POST, handleReboot);
+  server.on("/vmix/reconnect", HTTP_POST, handleVMixReconnect);
   server.on("/update", HTTP_POST, handleOTAUpdate, handleOTAUpload);
   server.on("/favicon.ico", []() {
     server.send(204);

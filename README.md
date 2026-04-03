@@ -294,6 +294,25 @@ Important:
 - if the uploaded binary targets the wrong board, the update can fail and will be rejected by the updater
 - on `ESP32-S3`, the OTA binary should be built with `USB CDC on boot` enabled if you want logs on the native USB serial monitor after reboot
 
+### Display modes and live debug
+
+The hardware settings page now supports two display modes:
+
+- `Tally simple`: classic single LED or LED strip tally behavior
+- `Écran 8x8`: forces the device to use `64` LEDs for an `8x8` matrix
+
+When `Live debug` is enabled on `Écran 8x8`, the matrix displays a numeric stage code for fast troubleshooting during setup and live operation:
+
+- `1` = WiFi connection in progress
+- `2` = vMix connection / reconnection in progress
+- `3` = vMix connected and subscribed
+- `4` = tally currently in preview
+- `5` = tally currently live
+- `6` = vMix connection error or disconnection
+- `7` = AP only mode
+- `8` = WiFi ready
+- `9` = WiFi failure
+
 ### Automatic upload script
 
 The repository includes this PowerShell script:
@@ -371,6 +390,7 @@ The header changes visually depending on the current state:
 | `/diagnostics` | `GET` | detailed system metrics |
 | `/scan` | `GET` | scan WiFi networks |
 | `/wifi` | `POST` | save WiFi configuration |
+| `/vmix/reconnect` | `POST` | force a vMix disconnect/reconnect cycle |
 | `/update` | `POST` | upload and install OTA firmware |
 | `/reboot` | `POST` | reboot the device |
 

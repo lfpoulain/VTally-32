@@ -4,6 +4,33 @@ void startAP() {
   LOG_NETWORK("AP démarré: %s - IP: http://%s", config.tally_name, WiFi.softAPIP().toString().c_str());
 }
 
+void setDebugStage(uint8_t code, const char* label) {
+  debugStageCode = code;
+  debugStageLabel = label;
+  applyTallyState();
+}
+
+void beginWiFiReconnect(bool forceDisconnect) {
+  if (strlen(config.wifi_ssid) == 0) {
+    return;
+  }
+
+  String networkHostname = sanitizeHostname(config.tally_name);
+  WiFi.setHostname(networkHostname.c_str());
+  WiFi.mode(WIFI_AP_STA);
+
+  if (forceDisconnect) {
+    WiFi.disconnect(true, true);
+    delay(100);
+  }
+
+  WiFi.begin(config.wifi_ssid, config.wifi_password);
+  wifiConnectInProgress = true;
+  wifiConnectAttemptStart = millis();
+  setDebugStage(1, "WIFI_CONNECTING");
+  LOG_NETWORK("Connexion WiFi lancée vers %s", config.wifi_ssid);
+}
+
 String sanitizeHostname(const char* sourceName) {
   String sanitized;
   bool lastWasHyphen = false;
@@ -44,6 +71,7 @@ String sanitizeHostname(const char* sourceName) {
 
 void setupWiFi() {
   LOG_NETWORK("Configuration WiFi en cours...");
+  setDebugStage(1, "WIFI_CONNECTING");
 
   WiFi.mode(WIFI_AP_STA);
 
@@ -59,7 +87,12 @@ void setupWiFi() {
     for (int attempt = 1; attempt <= WIFI_RETRY_COUNT && !connected; attempt++) {
       LOG_NETWORK("Tentative %d/%d - Connexion à: %s", attempt, WIFI_RETRY_COUNT, config.wifi_ssid);
       WiFi.setHostname(networkHostname.c_str());
+      WiFi.mode(WIFI_AP_STA);
+      WiFi.disconnect(true, true);
+      delay(100);
       WiFi.begin(config.wifi_ssid, config.wifi_password);
+      wifiConnectInProgress = true;
+      wifiConnectAttemptStart = millis();
 
       unsigned long start = millis();
       while (WiFi.status() != WL_CONNECTED && (millis() - start) < (WIFI_RETRY_TIMEOUT * 1000)) {
@@ -70,13 +103,16 @@ void setupWiFi() {
 
       if (WiFi.status() == WL_CONNECTED) {
         connected = true;
+        wifiConnectInProgress = false;
         LOG_NETWORK("WiFi connecté: %s (%s)", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+        setDebugStage(8, "WIFI_READY");
 
         WiFi.softAPdisconnect(true);
         WiFi.mode(WIFI_STA);
         apActive = false;
         LOG_NETWORK("AP désactivé (WiFi connecté)");
       } else {
+        wifiConnectInProgress = false;
         LOG_WARN("Échec tentative %d/%d", attempt, WIFI_RETRY_COUNT);
         if (attempt < WIFI_RETRY_COUNT) {
           WiFi.disconnect();
@@ -86,9 +122,11 @@ void setupWiFi() {
     }
 
     if (!connected) {
+      setDebugStage(9, "WIFI_FAILED");
       LOG_ERROR("Échec connexion WiFi après %d tentatives - Mode AP uniquement", WIFI_RETRY_COUNT);
     }
   } else {
+    setDebugStage(7, "AP_ONLY");
     LOG_INFO("Pas de WiFi configuré - Mode AP uniquement");
   }
 
@@ -104,7 +142,6 @@ void setupWiFi() {
 void checkWiFi() {
   bool currentConnected = (WiFi.status() == WL_CONNECTED);
 
-  // Déconnexion immédiate
   if (!currentConnected) {
     if (vmixClient.connected() || vmixConnected) {
       vmixClient.stop();
@@ -112,9 +149,34 @@ void checkWiFi() {
       setTally(false, false);
       LOG_NETWORK("WiFi perdu - arrêt du Tally");
     }
+    if (!wifiConnectInProgress && strlen(config.wifi_ssid) > 0) {
+      beginWiFiReconnect(false);
+    }
+  } else {
+    wifiConnectInProgress = false;
+    if (debugStageCode == 1 || debugStageCode == 9) {
+      setDebugStage(8, "WIFI_READY");
+    }
   }
 
-  // Vérifications et reconnexions périodiques
+  if (wifiConnectInProgress && currentConnected) {
+    wifiConnectInProgress = false;
+    if (apActive) {
+      WiFi.softAPdisconnect(true);
+      WiFi.mode(WIFI_STA);
+      apActive = false;
+      LOG_NETWORK("AP désactivé (WiFi reconnecté)");
+    }
+    setDebugStage(8, "WIFI_READY");
+    return;
+  }
+
+  if (wifiConnectInProgress && (millis() - wifiConnectAttemptStart) > (WIFI_RETRY_TIMEOUT * 1000UL)) {
+    wifiConnectInProgress = false;
+    LOG_WARN("Timeout reconnexion WiFi");
+    setDebugStage(9, "WIFI_FAILED");
+  }
+
   if (millis() - lastWiFiCheck < WIFI_CHECK_INTERVAL) return;
   lastWiFiCheck = millis();
 
@@ -126,11 +188,9 @@ void checkWiFi() {
       LOG_NETWORK("AP désactivé (WiFi reconnecté)");
     }
   } else {
-    if (strlen(config.wifi_ssid) > 0) {
+    if (strlen(config.wifi_ssid) > 0 && !wifiConnectInProgress) {
       LOG_NETWORK("Tentative reconnexion WiFi...");
-      String networkHostname = sanitizeHostname(config.tally_name);
-      WiFi.setHostname(networkHostname.c_str());
-      WiFi.begin(config.wifi_ssid, config.wifi_password);
+      beginWiFiReconnect(true);
     }
 
     if (!apActive) {

@@ -10,6 +10,10 @@ bool isValidLedCount(int ledCount) {
   return ledCount >= 1 && ledCount <= 255;
 }
 
+bool isValidDisplayMode(int displayMode) {
+  return displayMode == DISPLAY_MODE_SINGLE || displayMode == DISPLAY_MODE_MATRIX_8X8;
+}
+
 bool isValidVMixInput(const char* input) {
   size_t length = strlen(input);
   if (length == 0 || length >= sizeof(config.vmix_input)) {
@@ -29,6 +33,10 @@ void saveConfig() {
   LOG_INFO("Sauvegarde configuration...");
   preferences.begin("vtally32", false);
 
+  if (config.display_mode != DISPLAY_MODE_MATRIX_8X8) {
+    config.live_debug = false;
+  }
+
   preferences.putString("tally_name", config.tally_name);
   preferences.putString("wifi_ssid", config.wifi_ssid);
   preferences.putString("wifi_pwd", config.wifi_password);
@@ -40,6 +48,8 @@ void saveConfig() {
   preferences.putInt("brightness", config.brightness);
   preferences.putInt("led_pin", config.led_pin);
   preferences.putInt("led_count", config.led_count);
+  preferences.putUChar("display", config.display_mode);
+  preferences.putBool("debug", config.live_debug);
 
   preferences.end();
 
@@ -68,6 +78,8 @@ void loadConfig() {
   config.brightness = preferences.getInt("brightness", DEFAULT_BRIGHTNESS);
   config.led_pin = preferences.getInt("led_pin", DEFAULT_LED_PIN);
   config.led_count = preferences.getInt("led_count", DEFAULT_LED_COUNT);
+  config.display_mode = preferences.getUChar("display", DISPLAY_MODE_SINGLE);
+  config.live_debug = preferences.getBool("debug", false);
 
   if (strlen(config.tally_name) == 0) {
     strlcpy(config.tally_name, DEFAULT_TALLY_NAME, sizeof(config.tally_name));
@@ -86,6 +98,14 @@ void loadConfig() {
   }
   if (!isValidLedCount(config.led_count)) {
     config.led_count = DEFAULT_LED_COUNT;
+  }
+  if (!isValidDisplayMode(config.display_mode)) {
+    config.display_mode = DISPLAY_MODE_SINGLE;
+  }
+  if (config.display_mode == DISPLAY_MODE_MATRIX_8X8) {
+    config.led_count = 64;
+  } else {
+    config.live_debug = false;
   }
 
   preferences.end();

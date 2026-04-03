@@ -27,6 +27,16 @@ String formatUptime(unsigned long uptimeMs) {
   return String(buffer);
 }
 
+String getDisplayModeLabel() {
+  switch (config.display_mode) {
+    case DISPLAY_MODE_MATRIX_8X8:
+      return "Ecran 8x8";
+    case DISPLAY_MODE_SINGLE:
+    default:
+      return "Tally simple";
+  }
+}
+
 void handleDiagnostics() {
   StaticJsonDocument<768> doc;
   bool staConnected = WiFi.status() == WL_CONNECTED;
@@ -58,6 +68,11 @@ void handleDiagnostics() {
   doc["led_pin"] = config.led_pin;
   doc["led_count"] = config.led_count;
   doc["brightness"] = config.brightness;
+  doc["display_mode"] = config.display_mode;
+  doc["display_mode_label"] = getDisplayModeLabel();
+  doc["live_debug"] = config.live_debug;
+  doc["debug_stage_code"] = debugStageCode;
+  doc["debug_stage_label"] = debugStageLabel;
 
   String response;
   serializeJson(doc, response);

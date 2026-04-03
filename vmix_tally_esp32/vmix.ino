@@ -1,14 +1,33 @@
+void resetVMixConnectionState() {
+  vmixClient.stop();
+  vmixConnected = false;
+  vmixLineBuffer = "";
+  vmixCheckInterval = VMIX_CHECK_INTERVAL;
+  lastVMixCheck = 0;
+  setTally(false, false);
+}
+
+void requestVMixReconnect() {
+  LOG_VMIX("Reconnexion VMix forcée");
+  resetVMixConnectionState();
+  setDebugStage(2, "VMIX_RECONNECT_QUEUED");
+}
+
 bool connectVMix() {
   if (vmixClient.connected()) {
     LOG_VMIX("Déjà connecté à VMix");
-    vmixCheckInterval = VMIX_CHECK_INTERVAL; // Reset backoff
+    vmixCheckInterval = VMIX_CHECK_INTERVAL;
     return true;
   }
 
-  // Fermeture préventive du socket pour éviter les fuites de mémoire (Memory Leak)
-  vmixClient.stop();
+  if (WiFi.status() != WL_CONNECTED) {
+    setDebugStage(1, "WIFI_CONNECTING");
+    return false;
+  }
 
-  // Le port TCP vMix est fixé à 8099 pour l'API de tally
+  vmixClient.stop();
+  setDebugStage(2, "VMIX_CONNECTING");
+
   LOG_VMIX("Connexion à VMix %s:8099...", config.vmix_host);
 
   vmixClient.setNoDelay(true);
@@ -28,17 +47,30 @@ bool connectVMix() {
 
     unsigned long start = millis();
     bool success = false;
+    String responseBuffer = "";
 
     while (millis() - start < VMIX_RESPONSE_TIMEOUT && !success) {
-      if (vmixClient.available()) {
-        String response = vmixClient.readStringUntil('\n');
-        response.trim();
+      while (vmixClient.available()) {
+        char c = (char)vmixClient.read();
+        if (c == '\r') {
+          continue;
+        }
+        if (c == '\n') {
+          String response = responseBuffer;
+          responseBuffer = "";
+          response.trim();
 
-        if (response.startsWith("SUBSCRIBE OK") || response.startsWith("TALLY OK")) {
-          success = true;
-          LOG_VMIX("Réponse reçue: %s", response.c_str());
-          if (response.startsWith("TALLY OK")) {
-            parseVMix(response);
+          if (response.startsWith("SUBSCRIBE OK") || response.startsWith("TALLY OK")) {
+            success = true;
+            LOG_VMIX("Réponse reçue: %s", response.c_str());
+            if (response.startsWith("TALLY OK")) {
+              parseVMix(response);
+            }
+          }
+        } else {
+          responseBuffer += c;
+          if (responseBuffer.length() > 256) {
+            responseBuffer.remove(0, responseBuffer.length() - 128);
           }
         }
       }
@@ -54,36 +86,39 @@ bool connectVMix() {
 
     if (success) {
       vmixConnected = true;
-      vmixCheckInterval = VMIX_CHECK_INTERVAL; // Reset backoff upon success
+      vmixCheckInterval = VMIX_CHECK_INTERVAL;
+      vmixLineBuffer = "";
+      setDebugStage(3, "VMIX_CONNECTED");
       LOG_VMIX("VMix connecté et abonné avec succès");
       return true;
     }
 
     LOG_ERROR("VMix n'a pas répondu - déconnexion");
     vmixClient.stop();
+    setDebugStage(6, "VMIX_NO_RESPONSE");
     return false;
   }
 
   LOG_ERROR("Échec connexion VMix");
-  vmixClient.stop(); // Force release socket
+  vmixClient.stop();
+  setDebugStage(6, "VMIX_CONNECT_FAILED");
 
-  // Exponential backoff up to 30 seconds
-  vmixCheckInterval = min((unsigned long)30000, vmixCheckInterval * 2);
+  vmixCheckInterval = min((unsigned long)VMIX_MAX_RETRY_INTERVAL, vmixCheckInterval * 2);
   LOG_VMIX("Prochaine tentative dans %lu ms", vmixCheckInterval);
 
   return false;
 }
 
 void checkVMix() {
-  // Déconnexion immédiate si le socket est fermé
   if (vmixConnected && !vmixClient.connected()) {
     LOG_VMIX("Connexion VMix perdue");
     vmixConnected = false;
     vmixClient.stop();
+    vmixLineBuffer = "";
     setTally(false, false);
+    setDebugStage(6, "VMIX_DISCONNECTED");
   }
 
-  // Tentative de reconnexion périodique avec backoff exponentiel
   if (millis() - lastVMixCheck < vmixCheckInterval) return;
   lastVMixCheck = millis();
 
@@ -93,12 +128,24 @@ void checkVMix() {
 }
 
 void handleVMix() {
-  while (vmixClient.available()) {
-    String line = vmixClient.readStringUntil('\n');
-    line.trim();
-    if (line.length() > 0) {
-      LOG_DEBUG("VMix reçu: %s", line.c_str());
-      parseVMix(line);
+  while (vmixClient.connected() && vmixClient.available()) {
+    char c = (char)vmixClient.read();
+    if (c == '\r') {
+      continue;
+    }
+    if (c == '\n') {
+      String line = vmixLineBuffer;
+      vmixLineBuffer = "";
+      line.trim();
+      if (line.length() > 0) {
+        LOG_DEBUG("VMix reçu: %s", line.c_str());
+        parseVMix(line);
+      }
+    } else {
+      vmixLineBuffer += c;
+      if (vmixLineBuffer.length() > 256) {
+        vmixLineBuffer.remove(0, vmixLineBuffer.length() - 128);
+      }
     }
   }
 }
