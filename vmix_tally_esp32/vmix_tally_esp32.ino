@@ -53,7 +53,7 @@
 #define DISPLAY_MODE_SINGLE 0
 #define DISPLAY_MODE_MATRIX_8X8 1
 
-const char* FIRMWARE_VERSION = "2.0.0";
+const char* FIRMWARE_VERSION = "2.0.2";
 
 // ========================================
 // Macros de logging optimisées
