@@ -22,6 +22,8 @@
 #include <ArduinoJson.h>
 #include <Adafruit_NeoPixel.h>
 #include <Preferences.h>
+#include <esp_wifi.h>
+#include <lwip/sockets.h>
 
 // ========================================
 // Configuration et constantes
@@ -34,6 +36,14 @@
 #define VMIX_RESPONSE_TIMEOUT 1200
 #define VMIX_TCP_TIMEOUT 5000
 #define STATUS_UPDATE_INTERVAL 1000
+#define WIFI_STATUS_CACHE_MS 200
+
+// Niveaux de log
+#define LOG_LEVEL_NONE 0
+#define LOG_LEVEL_ERROR 1
+#define LOG_LEVEL_PRODUCTION 2
+#define LOG_LEVEL_DEBUG 3
+#define DEFAULT_LOG_LEVEL LOG_LEVEL_DEBUG
 
 // Constantes WiFi AP
 #define AP_PASSWORD "vtally32"
@@ -53,18 +63,18 @@
 #define DISPLAY_MODE_SINGLE 0
 #define DISPLAY_MODE_MATRIX_8X8 1
 
-const char* FIRMWARE_VERSION = "2.0.2";
+const char* FIRMWARE_VERSION = "2.1.0";
 
 // ========================================
-// Macros de logging optimisées
+// Macros de logging conditionnelles
 // ========================================
-#define LOG_INFO(msg, ...) Serial.printf("[INFO] " msg "\n", ##__VA_ARGS__)
-#define LOG_ERROR(msg, ...) Serial.printf("[ERROR] " msg "\n", ##__VA_ARGS__)
-#define LOG_WARN(msg, ...) Serial.printf("[WARN] " msg "\n", ##__VA_ARGS__)
-#define LOG_DEBUG(msg, ...) Serial.printf("[DEBUG] " msg "\n", ##__VA_ARGS__)
-#define LOG_NETWORK(msg, ...) Serial.printf("[NET] " msg "\n", ##__VA_ARGS__)
-#define LOG_VMIX(msg, ...) Serial.printf("[VMIX] " msg "\n", ##__VA_ARGS__)
-#define LOG_WEB(msg, ...) Serial.printf("[WEB] " msg "\n", ##__VA_ARGS__)
+#define LOG_ERROR(msg, ...) do { if (config.log_level >= LOG_LEVEL_ERROR) Serial.printf("[ERROR] " msg "\n", ##__VA_ARGS__); } while(0)
+#define LOG_WARN(msg, ...) do { if (config.log_level >= LOG_LEVEL_ERROR) Serial.printf("[WARN] " msg "\n", ##__VA_ARGS__); } while(0)
+#define LOG_INFO(msg, ...) do { if (config.log_level >= LOG_LEVEL_PRODUCTION) Serial.printf("[INFO] " msg "\n", ##__VA_ARGS__); } while(0)
+#define LOG_NETWORK(msg, ...) do { if (config.log_level >= LOG_LEVEL_PRODUCTION) Serial.printf("[NET] " msg "\n", ##__VA_ARGS__); } while(0)
+#define LOG_VMIX(msg, ...) do { if (config.log_level >= LOG_LEVEL_PRODUCTION) Serial.printf("[VMIX] " msg "\n", ##__VA_ARGS__); } while(0)
+#define LOG_WEB(msg, ...) do { if (config.log_level >= LOG_LEVEL_PRODUCTION) Serial.printf("[WEB] " msg "\n", ##__VA_ARGS__); } while(0)
+#define LOG_DEBUG(msg, ...) do { if (config.log_level >= LOG_LEVEL_DEBUG) Serial.printf("[DEBUG] " msg "\n", ##__VA_ARGS__); } while(0)
 
 // ========================================
 // Variables globales
@@ -96,6 +106,9 @@ struct Config {
   int led_count = DEFAULT_LED_COUNT;
   uint8_t display_mode = DISPLAY_MODE_SINGLE;
   bool live_debug = false;
+
+  // Config Performance
+  uint8_t log_level = DEFAULT_LOG_LEVEL;
 } config;
 
 WiFiClient vmixClient;
@@ -113,13 +126,27 @@ int lastBrightness = -1;
 bool otaUploadStarted = false;
 bool otaUploadSuccess = false;
 String otaLastError = "";
-String vmixLineBuffer = "";
+char vmixLineBuffer[260];
+int vmixLineBufferLen = 0;
 uint8_t debugStageCode = 0;
 String debugStageLabel = "BOOT";
 
 // Variables pour le redémarrage propre
 bool pendingReboot = false;
 unsigned long rebootTime = 0;
+
+// Cache WiFi.status() pour éviter appels répétés au driver
+wl_status_t cachedWiFiStatus = WL_DISCONNECTED;
+unsigned long lastWiFiStatusCheck = 0;
+
+wl_status_t getWiFiStatusCached() {
+  unsigned long now = millis();
+  if (now - lastWiFiStatusCheck >= WIFI_STATUS_CACHE_MS) {
+    cachedWiFiStatus = WiFi.status();
+    lastWiFiStatusCheck = now;
+  }
+  return cachedWiFiStatus;
+}
 
 // ========================================
 // Setup & Loop
@@ -150,9 +177,10 @@ void setup() {
   
   // WiFi
   setupWiFi();
-  
+  esp_wifi_set_ps(WIFI_PS_NONE);
+
   // VMix
-  if (WiFi.status() == WL_CONNECTED) {
+  if (getWiFiStatusCached() == WL_CONNECTED) {
     connectVMix();
   }
   
@@ -192,19 +220,19 @@ void loop() {
     return;
   }
 
+  // Priorité 1 : Traiter les données tally avec latence minimale
+  if (vmixConnected && vmixClient.available()) {
+    handleVMix();
+  }
+
   server.handleClient();
-  
+
   // Surveillance WiFi et réactivation AP si nécessaire
   checkWiFi();
-  
-  if (WiFi.status() == WL_CONNECTED) {
+
+  if (getWiFiStatusCached() == WL_CONNECTED) {
     checkVMix();
-    
-    // Traiter les données VMix si connecté
-    if (vmixClient.connected()) {
-      handleVMix();
-    }
   }
-  
-  delay(10);
+
+  delay(1);
 }

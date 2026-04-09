@@ -97,6 +97,7 @@ input[type=checkbox]{width:auto;transform:scale(1.2)}
 <div class='form-group' id='ledCountGroup'><label>Nombre de LEDs</label><input type='number' id='led_count' min='1' max='255' required></div>
 <div class='form-group'><label>Mode d'affichage</label><select id='display_mode'><option value='0'>Tally simple</option><option value='1'>Écran 8x8</option></select></div>
 <div class='form-group' id='liveDebugGroup'><label>Live debug</label><div class='inline-toggle'><input type='checkbox' id='live_debug'><span>Afficher un numéro d'étape debug sur la matrice 8x8</span></div></div>
+<div class='form-group'><label>Niveau de log Serial</label><select id='log_level'><option value='0'>Aucun (production)</option><option value='1'>Erreurs uniquement</option><option value='2'>Normal</option><option value='3'>Debug (verbose)</option></select></div>
 <button type='submit' class='btn btn-warning'>Sauvegarder et Redémarrer</button>
 </form></div></div>
 
@@ -127,6 +128,7 @@ input[type=checkbox]{width:auto;transform:scale(1.2)}
 <script>
 let currentColors={live:'#ff0000',preview:'#00ff00',off:'#000000'};
 let otaUploadInProgress=false;
+let activeTab=0;
 function toHex(c){let h=((c||0)>>>0).toString(16).padStart(6,'0');return '#'+h;}
 function updateDisplayModeUI(){
 const mode=parseInt(document.getElementById('display_mode').value||'0');
@@ -159,6 +161,7 @@ document.getElementById('led_pin').value=d.led_pin;
 document.getElementById('led_count').value=d.led_count;
 document.getElementById('display_mode').value=(d.display_mode??0).toString();
 document.getElementById('live_debug').checked=!!d.live_debug;
+document.getElementById('log_level').value=(d.log_level??3).toString();
 updateDisplayModeUI();
 currentColors.live=toHex(d.live_color);
 currentColors.preview=toHex(d.preview_color);
@@ -184,14 +187,14 @@ document.getElementById('hardwareForm').addEventListener('submit',e=>{
 e.preventDefault();
 if(confirm('Sauvegarder la configuration matérielle? L\'ESP32 va redémarrer.')){
 const mode=parseInt(document.getElementById('display_mode').value);
-const data={tally_name:document.getElementById('tally_name').value,led_pin:parseInt(document.getElementById('led_pin').value),led_count:parseInt(document.getElementById('led_count').value),display_mode:mode,live_debug:document.getElementById('live_debug').checked};
+const data={tally_name:document.getElementById('tally_name').value,led_pin:parseInt(document.getElementById('led_pin').value),led_count:parseInt(document.getElementById('led_count').value),display_mode:mode,live_debug:document.getElementById('live_debug').checked,log_level:parseInt(document.getElementById('log_level').value)};
 if(mode===1){data.led_count=64;}
 if(mode!==1){data.live_debug=false;}
 fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(d=>{alert('Configuration sauvegardee! Redemarrage...');setTimeout(()=>location.reload(),3000);}).catch(e=>alert('Erreur: '+e));}
 });
 document.getElementById('otaForm').addEventListener('submit',uploadOTA);
-setInterval(updateStatus,1000);
-setInterval(updateDiagnostics,2000);
+setInterval(updateStatus,2000);
+setInterval(function(){if(activeTab===3)updateDiagnostics();},5000);
 });
 function updateStatus(){
 if(otaUploadInProgress)return;
@@ -244,7 +247,8 @@ const items=[
 ['Live debug',d.live_debug?'Actif':'Inactif'],
 ['Étape debug',((d.debug_stage_code??0)+' - '+(d.debug_stage_label||''))],
 ['LEDs',d.led_count+' sur GPIO '+d.led_pin],
-['Luminosité',d.brightness]
+['Luminosité',d.brightness],
+['Log Serial',['Aucun','Erreurs','Normal','Debug'][d.log_level??3]]
 ];
 grid.innerHTML=items.map(item=>'<div class="diag-item"><div class="diag-label">'+item[0]+'</div><div class="diag-value">'+item[1]+'</div></div>').join('');
 document.getElementById('diagnosticsUpdated').textContent='Dernière mise à jour: '+new Date().toLocaleTimeString();
@@ -313,6 +317,7 @@ function scanWiFi(){
 const list=document.getElementById('wifiList');
 list.innerHTML='<option value="">Scan en cours...</option>';
 fetch('/scan').then(r=>r.json()).then(d=>{
+if(d.scanning){setTimeout(scanWiFi,1500);return;}
 if(d.networks&&d.networks.length>0){
 list.innerHTML='<option value="">-- Sélectionner un réseau --</option>';
 d.networks.forEach(n=>{
@@ -329,6 +334,7 @@ const ssid=document.getElementById('wifiList').value;
 if(ssid)document.getElementById('newssid').value=ssid;
 }
 function switchTab(index){
+activeTab=index;
 const tabs=document.querySelectorAll('.tab');
 const contents=document.querySelectorAll('.tab-content');
 tabs.forEach((t,i)=>{if(i===index){t.classList.add('active');}else{t.classList.remove('active');}});
@@ -340,7 +346,18 @@ if(index===3){updateDiagnostics();}
 
 void handleRoot() {
   LOG_WEB("Accès à la page d'accueil (GET /)");
-  server.send_P(200, "text/html", index_html);
+  size_t htmlLen = strlen_P(index_html);
+  server.setContentLength(htmlLen);
+  server.send(200, "text/html", "");
+
+  const size_t CHUNK_SIZE = 1024;
+  for (size_t offset = 0; offset < htmlLen; offset += CHUNK_SIZE) {
+    size_t chunkLen = min(CHUNK_SIZE, htmlLen - offset);
+    char buf[CHUNK_SIZE];
+    memcpy_P(buf, index_html + offset, chunkLen);
+    server.sendContent(buf, chunkLen);
+    yield();
+  }
 }
 
 void handleConfig() {
@@ -358,6 +375,7 @@ void handleConfig() {
     doc["led_count"] = config.led_count;
     doc["display_mode"] = config.display_mode;
     doc["live_debug"] = config.live_debug;
+    doc["log_level"] = config.log_level;
     doc["wifi_ssid"] = WiFi.SSID();
 
     String response;
@@ -466,6 +484,12 @@ void handleConfig() {
       updatedConfig.live_debug = doc["live_debug"].as<bool>();
       hardwareConfigChanged = true;
     }
+    if (doc.containsKey("log_level")) {
+      int logLevel = doc["log_level"].as<int>();
+      if (logLevel >= LOG_LEVEL_NONE && logLevel <= LOG_LEVEL_DEBUG) {
+        updatedConfig.log_level = (uint8_t)logLevel;
+      }
+    }
 
     if (updatedConfig.display_mode != DISPLAY_MODE_MATRIX_8X8) {
       updatedConfig.live_debug = false;
@@ -559,7 +583,7 @@ void handleStatus() {
   doc["vmix_host"] = config.vmix_host;
   doc["vmix_input"] = config.vmix_input;
   doc["wifi_ssid"] = WiFi.SSID();
-  doc["wifi_ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : "";
+  doc["wifi_ip"] = getWiFiStatusCached() == WL_CONNECTED ? WiFi.localIP().toString() : "";
 
   String response;
   serializeJson(doc, response);
@@ -568,7 +592,20 @@ void handleStatus() {
 
 void handleScan() {
   LOG_WEB("Scan WiFi demandé...");
-  int n = WiFi.scanNetworks();
+
+  int n = WiFi.scanComplete();
+
+  if (n == WIFI_SCAN_FAILED) {
+    WiFi.scanNetworks(true);
+    server.send(200, "application/json", "{\"networks\":[],\"scanning\":true}");
+    return;
+  }
+
+  if (n == WIFI_SCAN_RUNNING) {
+    server.send(200, "application/json", "{\"networks\":[],\"scanning\":true}");
+    return;
+  }
+
   LOG_WEB("%d réseaux trouvés", n);
 
   // Limiter à 15 réseaux pour économiser la RAM de l'ESP32

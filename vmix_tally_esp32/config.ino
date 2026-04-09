@@ -50,6 +50,7 @@ void saveConfig() {
   preferences.putInt("led_count", config.led_count);
   preferences.putUChar("display", config.display_mode);
   preferences.putBool("debug", config.live_debug);
+  preferences.putUChar("log_level", config.log_level);
 
   preferences.end();
 
@@ -80,6 +81,7 @@ void loadConfig() {
   config.led_count = preferences.getInt("led_count", DEFAULT_LED_COUNT);
   config.display_mode = preferences.getUChar("display", DISPLAY_MODE_SINGLE);
   config.live_debug = preferences.getBool("debug", false);
+  config.log_level = preferences.getUChar("log_level", DEFAULT_LOG_LEVEL);
 
   if (strlen(config.tally_name) == 0) {
     strlcpy(config.tally_name, DEFAULT_TALLY_NAME, sizeof(config.tally_name));
@@ -106,6 +108,9 @@ void loadConfig() {
     config.led_count = 64;
   } else {
     config.live_debug = false;
+  }
+  if (config.log_level > LOG_LEVEL_DEBUG) {
+    config.log_level = DEFAULT_LOG_LEVEL;
   }
 
   preferences.end();

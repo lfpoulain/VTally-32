@@ -1,7 +1,7 @@
 void resetVMixConnectionState() {
   vmixClient.stop();
   vmixConnected = false;
-  vmixLineBuffer = "";
+  vmixLineBufferLen = 0;
   vmixCheckInterval = VMIX_CHECK_INTERVAL;
   lastVMixCheck = 0;
   setTally(false, false);
@@ -20,7 +20,7 @@ bool connectVMix() {
     return true;
   }
 
-  if (WiFi.status() != WL_CONNECTED) {
+  if (getWiFiStatusCached() != WL_CONNECTED) {
     setDebugStage(1, "WIFI_CONNECTING");
     return false;
   }
@@ -47,30 +47,28 @@ bool connectVMix() {
 
     unsigned long start = millis();
     bool success = false;
-    String responseBuffer = "";
+    char responseBuf[260];
+    int responseBufLen = 0;
 
     while (millis() - start < VMIX_RESPONSE_TIMEOUT && !success) {
       while (vmixClient.available()) {
         char c = (char)vmixClient.read();
-        if (c == '\r') {
-          continue;
-        }
+        if (c == '\r') continue;
         if (c == '\n') {
-          String response = responseBuffer;
-          responseBuffer = "";
-          response.trim();
-
-          if (response.startsWith("SUBSCRIBE OK") || response.startsWith("TALLY OK")) {
-            success = true;
-            LOG_VMIX("Réponse reçue: %s", response.c_str());
-            if (response.startsWith("TALLY OK")) {
-              parseVMix(response);
+          responseBuf[responseBufLen] = '\0';
+          if (responseBufLen > 0) {
+            if (strncmp(responseBuf, "SUBSCRIBE OK", 12) == 0 || strncmp(responseBuf, "TALLY OK", 8) == 0) {
+              success = true;
+              LOG_VMIX("Réponse reçue: %s", responseBuf);
+              if (strncmp(responseBuf, "TALLY OK", 8) == 0) {
+                parseVMix(responseBuf);
+              }
             }
           }
+          responseBufLen = 0;
         } else {
-          responseBuffer += c;
-          if (responseBuffer.length() > 256) {
-            responseBuffer.remove(0, responseBuffer.length() - 128);
+          if (responseBufLen < (int)(sizeof(responseBuf) - 1)) {
+            responseBuf[responseBufLen++] = c;
           }
         }
       }
@@ -81,13 +79,27 @@ bool connectVMix() {
         return false;
       }
 
-      delay(10);
+      delay(1);
     }
 
     if (success) {
+      // TCP Keepalive : détecter une connexion morte en ~35s au lieu de 2min+
+      int fd = vmixClient.fd();
+      if (fd >= 0) {
+        int keepAlive = 1;
+        int keepIdle = 5;       // Première sonde après 5s d'inactivité
+        int keepInterval = 5;   // Sondes toutes les 5s
+        int keepCount = 6;      // Abandon après 6 échecs = ~35s total
+        setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(keepAlive));
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(keepIdle));
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(keepInterval));
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(keepCount));
+        LOG_VMIX("TCP keepalive activé (détection ~35s)");
+      }
+
       vmixConnected = true;
       vmixCheckInterval = VMIX_CHECK_INTERVAL;
-      vmixLineBuffer = "";
+      vmixLineBufferLen = 0;
       setDebugStage(3, "VMIX_CONNECTED");
       LOG_VMIX("VMix connecté et abonné avec succès");
       return true;
@@ -114,7 +126,7 @@ void checkVMix() {
     LOG_VMIX("Connexion VMix perdue");
     vmixConnected = false;
     vmixClient.stop();
-    vmixLineBuffer = "";
+    vmixLineBufferLen = 0;
     setTally(false, false);
     setDebugStage(6, "VMIX_DISCONNECTED");
   }
@@ -130,32 +142,29 @@ void checkVMix() {
 void handleVMix() {
   while (vmixClient.connected() && vmixClient.available()) {
     char c = (char)vmixClient.read();
-    if (c == '\r') {
-      continue;
-    }
+    if (c == '\r') continue;
     if (c == '\n') {
-      String line = vmixLineBuffer;
-      vmixLineBuffer = "";
-      line.trim();
-      if (line.length() > 0) {
-        LOG_DEBUG("VMix reçu: %s", line.c_str());
-        parseVMix(line);
+      vmixLineBuffer[vmixLineBufferLen] = '\0';
+      if (vmixLineBufferLen > 0) {
+        LOG_DEBUG("VMix reçu: %s", vmixLineBuffer);
+        parseVMix(vmixLineBuffer);
       }
+      vmixLineBufferLen = 0;
     } else {
-      vmixLineBuffer += c;
-      if (vmixLineBuffer.length() > 256) {
-        vmixLineBuffer.remove(0, vmixLineBuffer.length() - 128);
+      if (vmixLineBufferLen < (int)(sizeof(vmixLineBuffer) - 1)) {
+        vmixLineBuffer[vmixLineBufferLen++] = c;
       }
     }
   }
 }
 
-void parseVMix(const String& cmd) {
-  if (!cmd.startsWith("TALLY OK")) return;
-  if (cmd.length() < 10) return;
+void parseVMix(const char* cmd) {
+  if (strncmp(cmd, "TALLY OK", 8) != 0) return;
+  int cmdLen = strlen(cmd);
+  if (cmdLen < 10) return;
 
-  String tallyData = cmd.substring(9);
-  tallyData.trim();
+  const char* tallyData = cmd + 9;
+  while (*tallyData == ' ') tallyData++;
 
   if (strlen(config.vmix_input) == 0) {
     LOG_WARN("Input VMix non configuré");
@@ -169,13 +178,13 @@ void parseVMix(const String& cmd) {
     return;
   }
 
-  if (inputIndex < tallyData.length()) {
-    char state = tallyData.charAt(inputIndex);
+  int tallyLen = strlen(tallyData);
+  if (inputIndex < tallyLen) {
+    char state = tallyData[inputIndex];
     bool live = (state == '1' || state == '3');
     bool preview = (state == '2' || state == '3');
-
     setTally(live, preview);
   } else {
-    LOG_WARN("Input %s hors limites (max: %d)", config.vmix_input, tallyData.length());
+    LOG_WARN("Input %s hors limites (max: %d)", config.vmix_input, tallyLen);
   }
 }

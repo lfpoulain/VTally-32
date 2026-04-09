@@ -39,7 +39,7 @@ String getDisplayModeLabel() {
 
 void handleDiagnostics() {
   StaticJsonDocument<768> doc;
-  bool staConnected = WiFi.status() == WL_CONNECTED;
+  bool staConnected = getWiFiStatusCached() == WL_CONNECTED;
   String staIp = staConnected ? WiFi.localIP().toString() : "";
   String apIp = WiFi.softAPIP().toString();
 
@@ -73,6 +73,7 @@ void handleDiagnostics() {
   doc["live_debug"] = config.live_debug;
   doc["debug_stage_code"] = debugStageCode;
   doc["debug_stage_label"] = debugStageLabel;
+  doc["log_level"] = config.log_level;
 
   String response;
   serializeJson(doc, response);

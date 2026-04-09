@@ -34,6 +34,7 @@ The project includes:
 ## Table of Contents
 
 - [Features](#features)
+  - [Performance & Low Latency](#performance--low-latency)
 - [Project Architecture](#project-architecture)
 - [Hardware](#hardware)
 - [Wiring](#wiring)
@@ -44,7 +45,6 @@ The project includes:
 - [REST API](#rest-api)
 - [Serial Logs](#serial-logs)
 - [Repository Structure](#repository-structure)
-- [Roadmap](#roadmap)
 - [License](#license)
 
 ---
@@ -58,6 +58,7 @@ The project includes:
 - smart automatic reconnection with exponential backoff (up to 30s)
 - memory-leak-proof TCP socket handling
 - proper handling of `LIVE`, `PREVIEW`, and `LIVE+PREVIEW`
+- TCP keepalive for fast detection of dead connections (~35s instead of 2min+)
 
 ### LED Management
 
@@ -73,18 +74,31 @@ The project includes:
 - `AP + STA` mode
 - custom device naming (`tally_name`) mapped to AP SSID and hostname
 - mDNS resolution (reach your device at `http://vtally-32.local`)
-- memory-safe WiFi scanning directly from the UI (limits to 15 networks)
+- non-blocking asynchronous WiFi scanning from the UI (limits to 15 networks)
 - silent periodic reconnection with immediate disconnect detection
 - automatic AP fallback if WiFi drops
+- WiFi power save mode disabled for lowest possible latency
+
+### Performance & Low Latency
+
+- WiFi power save mode (`modem sleep`) disabled to prevent 100-300ms radio wake-up delays
+- tally data processing has highest priority in the main loop (runs before web server and WiFi checks)
+- fixed-size `char[]` buffer for vMix TCP parsing (no heap fragmentation from `String` concatenation)
+- `WiFi.status()` result cached to avoid repeated driver calls
+- rate-limited WiFi monitoring (500ms) to free CPU for tally processing
+- chunked HTML serving with `yield()` to prevent blocking during web page loads
+- configurable serial log level (None / Error / Normal / Debug) to eliminate up to ~13ms of `Serial.printf` overhead per tally change in production
+- loop delay reduced from 10ms to 1ms
 
 ### Reliability and Maintenance
 
 - PROGMEM-based static web page serving (no RAM fragmentation)
 - asynchronous, clean reboots (avoids frontend network errors)
 - persistent configuration with validation
-- structured serial logs
+- configurable serial log level with 4 verbosity modes
 - modular firmware split across multiple `.ino` files
 - integrated diagnostics page
+- TCP keepalive detects vMix server crashes in ~35s
 
 ---
 
@@ -211,8 +225,13 @@ The web interface lets you configure the device without editing the code. You ca
 | `Tally Name` | Custom name used for mDNS, Hostname, and AP SSID |
 | `LED GPIO Pin` | NeoPixel output pin |
 | `LED Count` | number of LEDs in the chain |
+| `Display Mode` | `Tally simple` or `Ecran 8x8` (64 LED matrix) |
+| `Live Debug` | show numeric stage code on the 8x8 matrix (8x8 mode only) |
+| `Serial Log Level` | `None` (production), `Errors only`, `Normal`, `Debug (verbose)` |
 
 > Hardware/Network changes trigger an automatic restart.
+>
+> **Tip:** Set `Serial Log Level` to `None` during live productions to eliminate serial output latency.
 
 ### `WiFi` Tab
 
@@ -412,11 +431,11 @@ The header changes visually depending on the current state:
 
 ```json
 {
-  "firmware_version": "2.0.0",
+  "firmware_version": "2.1.0",
   "tally_name": "Cam-1",
   "uptime_human": "0d 00h 12m 05s",
   "free_heap": 231456,
-  "wifi_mode": "AP+STA",
+  "wifi_mode": "STA",
   "ap_active": false,
   "sta_connected": true,
   "wifi_ssid": "StudioWiFi",
@@ -431,9 +450,27 @@ The header changes visually depending on the current state:
   "tally_state": "PREVIEW",
   "led_pin": 14,
   "led_count": 1,
-  "brightness": 255
+  "brightness": 255,
+  "log_level": 3
 }
 ```
+
+---
+
+## Serial Logs
+
+Serial logging is configurable via the web UI (`Hardware & Network` tab) with four levels:
+
+| Level | Value | Output | Use case |
+|---|---|---|---|
+| **None** | `0` | No serial output | Live production (lowest latency) |
+| **Errors** | `1` | `[ERROR]` and `[WARN]` only | Production with safety net |
+| **Normal** | `2` | + `[INFO]`, `[NET]`, `[VMIX]`, `[WEB]` | General use |
+| **Debug** | `3` | + `[DEBUG]` verbose messages | Troubleshooting |
+
+The setting is persisted in flash and survives reboots.
+
+At 115200 baud, each log line takes ~4ms of blocking serial output. During a live production with frequent tally changes, setting the level to `None` eliminates ~13ms of latency per state change.
 
 ---
 

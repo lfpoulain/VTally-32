@@ -140,63 +140,66 @@ void setupWiFi() {
 }
 
 void checkWiFi() {
-  bool currentConnected = (WiFi.status() == WL_CONNECTED);
+  if (millis() - lastWiFiCheck < 500) return;
+  lastWiFiCheck = millis();
 
-  if (!currentConnected) {
-    if (vmixClient.connected() || vmixConnected) {
-      vmixClient.stop();
-      vmixConnected = false;
-      setTally(false, false);
-      LOG_NETWORK("WiFi perdu - arrêt du Tally");
-    }
-    if (!wifiConnectInProgress && strlen(config.wifi_ssid) > 0) {
-      beginWiFiReconnect(false);
-    }
-  } else {
-    wifiConnectInProgress = false;
-    if (debugStageCode == 1 || debugStageCode == 9) {
-      setDebugStage(8, "WIFI_READY");
-    }
+  bool currentConnected = (getWiFiStatusCached() == WL_CONNECTED);
+
+  // Arrêt VMix si WiFi perdu
+  if (!currentConnected && (vmixClient.connected() || vmixConnected)) {
+    vmixClient.stop();
+    vmixConnected = false;
+    vmixLineBufferLen = 0;
+    setTally(false, false);
+    LOG_NETWORK("WiFi perdu - arrêt du Tally");
   }
 
-  if (wifiConnectInProgress && currentConnected) {
-    wifiConnectInProgress = false;
-    if (apActive) {
-      WiFi.softAPdisconnect(true);
-      WiFi.mode(WIFI_STA);
-      apActive = false;
-      LOG_NETWORK("AP désactivé (WiFi reconnecté)");
+  // Gestion de la reconnexion en cours
+  if (wifiConnectInProgress) {
+    if (currentConnected) {
+      wifiConnectInProgress = false;
+      if (apActive) {
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        apActive = false;
+        esp_wifi_set_ps(WIFI_PS_NONE);
+        LOG_NETWORK("AP désactivé (WiFi reconnecté)");
+      }
+      setDebugStage(8, "WIFI_READY");
+      return;
     }
-    setDebugStage(8, "WIFI_READY");
+    if ((millis() - wifiConnectAttemptStart) > (WIFI_RETRY_TIMEOUT * 1000UL)) {
+      wifiConnectInProgress = false;
+      LOG_WARN("Timeout reconnexion WiFi");
+      setDebugStage(9, "WIFI_FAILED");
+    }
     return;
   }
 
-  if (wifiConnectInProgress && (millis() - wifiConnectAttemptStart) > (WIFI_RETRY_TIMEOUT * 1000UL)) {
-    wifiConnectInProgress = false;
-    LOG_WARN("Timeout reconnexion WiFi");
-    setDebugStage(9, "WIFI_FAILED");
-  }
-
-  if (millis() - lastWiFiCheck < WIFI_CHECK_INTERVAL) return;
-  lastWiFiCheck = millis();
-
+  // WiFi connecté : maintenance
   if (currentConnected) {
+    if (debugStageCode == 1 || debugStageCode == 9) {
+      setDebugStage(8, "WIFI_READY");
+    }
     if (apActive) {
       WiFi.softAPdisconnect(true);
       WiFi.mode(WIFI_STA);
       apActive = false;
+      esp_wifi_set_ps(WIFI_PS_NONE);
       LOG_NETWORK("AP désactivé (WiFi reconnecté)");
     }
-  } else {
-    if (strlen(config.wifi_ssid) > 0 && !wifiConnectInProgress) {
-      LOG_NETWORK("Tentative reconnexion WiFi...");
-      beginWiFiReconnect(true);
-    }
+    return;
+  }
 
-    if (!apActive) {
-      WiFi.mode(WIFI_AP_STA);
-      startAP();
-      LOG_NETWORK("AP réactivé (WiFi perdu)");
-    }
+  // WiFi déconnecté : tenter une reconnexion
+  if (strlen(config.wifi_ssid) > 0) {
+    LOG_NETWORK("Tentative reconnexion WiFi...");
+    beginWiFiReconnect(true);
+  }
+
+  if (!apActive) {
+    WiFi.mode(WIFI_AP_STA);
+    startAP();
+    LOG_NETWORK("AP réactivé (WiFi perdu)");
   }
 }
