@@ -35,6 +35,7 @@
 #define VMIX_MAX_RETRY_INTERVAL 5000
 #define VMIX_RESPONSE_TIMEOUT 1200
 #define VMIX_TCP_TIMEOUT 5000
+#define VMIX_MAX_LINE_LENGTH 1024
 #define STATUS_UPDATE_INTERVAL 1000
 #define WIFI_STATUS_CACHE_MS 200
 
@@ -63,7 +64,7 @@
 #define DISPLAY_MODE_SINGLE 0
 #define DISPLAY_MODE_MATRIX_8X8 1
 
-const char* FIRMWARE_VERSION = "2.1.0";
+const char* FIRMWARE_VERSION = "2.1.1";
 
 // ========================================
 // Macros de logging conditionnelles
@@ -126,7 +127,7 @@ int lastBrightness = -1;
 bool otaUploadStarted = false;
 bool otaUploadSuccess = false;
 String otaLastError = "";
-char vmixLineBuffer[260];
+char vmixLineBuffer[VMIX_MAX_LINE_LENGTH];
 int vmixLineBufferLen = 0;
 uint8_t debugStageCode = 0;
 String debugStageLabel = "BOOT";

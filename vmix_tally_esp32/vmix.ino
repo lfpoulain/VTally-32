@@ -46,23 +46,27 @@ bool connectVMix() {
     vmixClient.flush();
 
     unsigned long start = millis();
-    bool success = false;
-    char responseBuf[260];
+    bool subscribed = false;
+    char responseBuf[VMIX_MAX_LINE_LENGTH];
     int responseBufLen = 0;
 
-    while (millis() - start < VMIX_RESPONSE_TIMEOUT && !success) {
+    while (millis() - start < VMIX_RESPONSE_TIMEOUT && !subscribed) {
       while (vmixClient.available()) {
         char c = (char)vmixClient.read();
         if (c == '\r') continue;
         if (c == '\n') {
           responseBuf[responseBufLen] = '\0';
           if (responseBufLen > 0) {
-            if (strncmp(responseBuf, "SUBSCRIBE OK", 12) == 0 || strncmp(responseBuf, "TALLY OK", 8) == 0) {
-              success = true;
+            if (strncmp(responseBuf, "SUBSCRIBE OK", 12) == 0) {
+              subscribed = true;
               LOG_VMIX("Réponse reçue: %s", responseBuf);
-              if (strncmp(responseBuf, "TALLY OK", 8) == 0) {
-                parseVMix(responseBuf);
-              }
+            } else if (strncmp(responseBuf, "TALLY OK", 8) == 0) {
+              parseVMix(responseBuf);
+            } else if (strncmp(responseBuf, "SUBSCRIBE ER", 12) == 0) {
+              LOG_ERROR("Abonnement TALLY refuse: %s", responseBuf);
+              vmixClient.stop();
+              setDebugStage(6, "VMIX_SUBSCRIBE_FAILED");
+              return false;
             }
           }
           responseBufLen = 0;
@@ -82,7 +86,10 @@ bool connectVMix() {
       delay(1);
     }
 
-    if (success) {
+    if (subscribed) {
+      vmixClient.print("TALLY\r\n");
+      vmixClient.flush();
+
       // TCP Keepalive : détecter une connexion morte en ~35s au lieu de 2min+
       int fd = vmixClient.fd();
       if (fd >= 0) {
