@@ -31,10 +31,14 @@
 #define WIFI_RETRY_COUNT 3
 #define WIFI_RETRY_TIMEOUT 5
 #define WIFI_CHECK_INTERVAL 5000
+#define WIFI_RECONNECT_INTERVAL 10000   // Relance manuelle si l'auto-reconnect du driver n'aboutit pas
+#define WIFI_AP_FALLBACK_DELAY 30000    // Réactivation de l'AP seulement après une coupure longue
 #define VMIX_CHECK_INTERVAL 1000
 #define VMIX_MAX_RETRY_INTERVAL 5000
 #define VMIX_RESPONSE_TIMEOUT 1200
-#define VMIX_TCP_TIMEOUT 5000
+#define VMIX_CONNECT_TIMEOUT 1500
+#define VMIX_HEARTBEAT_INTERVAL 1000    // Envoi périodique de TALLY pour resynchroniser et sonder la connexion
+#define VMIX_RX_TIMEOUT 4000            // Connexion considérée morte sans réponse de VMix
 #define VMIX_MAX_LINE_LENGTH 1024
 #define STATUS_UPDATE_INTERVAL 1000
 #define WIFI_STATUS_CACHE_MS 200
@@ -44,7 +48,7 @@
 #define LOG_LEVEL_ERROR 1
 #define LOG_LEVEL_PRODUCTION 2
 #define LOG_LEVEL_DEBUG 3
-#define DEFAULT_LOG_LEVEL LOG_LEVEL_DEBUG
+#define DEFAULT_LOG_LEVEL LOG_LEVEL_PRODUCTION
 
 // Constantes WiFi AP
 #define AP_PASSWORD "vtally32"
@@ -64,7 +68,7 @@
 #define DISPLAY_MODE_SINGLE 0
 #define DISPLAY_MODE_MATRIX_8X8 1
 
-const char* FIRMWARE_VERSION = "2.1.1";
+const char* FIRMWARE_VERSION = "2.1.2";
 
 // ========================================
 // Macros de logging conditionnelles
@@ -115,9 +119,11 @@ struct Config {
 WiFiClient vmixClient;
 unsigned long lastVMixCheck = 0;
 unsigned long vmixCheckInterval = VMIX_CHECK_INTERVAL;
+unsigned long lastVMixRx = 0;
+unsigned long lastVMixHeartbeat = 0;
 unsigned long lastWiFiCheck = 0;
-unsigned long wifiConnectAttemptStart = 0;
-bool wifiConnectInProgress = false;
+unsigned long wifiLostSince = 0;
+unsigned long lastWiFiReconnectAttempt = 0;
 bool vmixConnected = false;
 bool apActive = false;
 bool isLive = false;
@@ -178,7 +184,6 @@ void setup() {
   
   // WiFi
   setupWiFi();
-  esp_wifi_set_ps(WIFI_PS_NONE);
 
   // VMix
   if (getWiFiStatusCached() == WL_CONNECTED) {
@@ -231,9 +236,8 @@ void loop() {
   // Surveillance WiFi et réactivation AP si nécessaire
   checkWiFi();
 
-  if (getWiFiStatusCached() == WL_CONNECTED) {
-    checkVMix();
-  }
+  // Toujours appelé : le watchdog VMix doit tourner même pendant une coupure WiFi
+  checkVMix();
 
   delay(1);
 }

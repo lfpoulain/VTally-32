@@ -13,13 +13,17 @@ void requestVMixReconnect() {
   setDebugStage(2, "VMIX_RECONNECT_QUEUED");
 }
 
-bool connectVMix() {
-  if (vmixClient.connected()) {
-    LOG_VMIX("Déjà connecté à VMix");
-    vmixCheckInterval = VMIX_CHECK_INTERVAL;
-    return true;
-  }
+bool failVMixConnect(const char* stage) {
+  vmixClient.stop();
+  setDebugStage(6, stage);
 
+  vmixCheckInterval = min((unsigned long)VMIX_MAX_RETRY_INTERVAL, vmixCheckInterval * 2);
+  LOG_VMIX("Prochaine tentative dans %lu ms", vmixCheckInterval);
+
+  return false;
+}
+
+bool connectVMix() {
   if (getWiFiStatusCached() != WL_CONNECTED) {
     setDebugStage(1, "WIFI_CONNECTING");
     return false;
@@ -30,129 +34,127 @@ bool connectVMix() {
 
   LOG_VMIX("Connexion à VMix %s:8099...", config.vmix_host);
 
-  vmixClient.setNoDelay(true);
-  vmixClient.setTimeout(VMIX_TCP_TIMEOUT);
-
-  if (vmixClient.connect(config.vmix_host, 8099)) {
-    delay(100);
-
-    if (!vmixClient.connected()) {
-      LOG_ERROR("Connexion fermée par VMix");
-      vmixClient.stop();
-      return false;
-    }
-
-    vmixClient.print("SUBSCRIBE TALLY\r\n");
-    vmixClient.flush();
-
-    unsigned long start = millis();
-    bool subscribed = false;
-    char responseBuf[VMIX_MAX_LINE_LENGTH];
-    int responseBufLen = 0;
-
-    while (millis() - start < VMIX_RESPONSE_TIMEOUT && !subscribed) {
-      while (vmixClient.available()) {
-        char c = (char)vmixClient.read();
-        if (c == '\r') continue;
-        if (c == '\n') {
-          responseBuf[responseBufLen] = '\0';
-          if (responseBufLen > 0) {
-            if (strncmp(responseBuf, "SUBSCRIBE OK", 12) == 0) {
-              subscribed = true;
-              LOG_VMIX("Réponse reçue: %s", responseBuf);
-            } else if (strncmp(responseBuf, "TALLY OK", 8) == 0) {
-              parseVMix(responseBuf);
-            } else if (strncmp(responseBuf, "SUBSCRIBE ER", 12) == 0) {
-              LOG_ERROR("Abonnement TALLY refuse: %s", responseBuf);
-              vmixClient.stop();
-              setDebugStage(6, "VMIX_SUBSCRIBE_FAILED");
-              return false;
-            }
-          }
-          responseBufLen = 0;
-        } else {
-          if (responseBufLen < (int)(sizeof(responseBuf) - 1)) {
-            responseBuf[responseBufLen++] = c;
-          }
-        }
-      }
-
-      if (!vmixClient.connected()) {
-        LOG_VMIX("VMix a fermé la connexion");
-        vmixClient.stop();
-        return false;
-      }
-
-      delay(1);
-    }
-
-    if (subscribed) {
-      vmixClient.print("TALLY\r\n");
-      vmixClient.flush();
-
-      // TCP Keepalive : détecter une connexion morte en ~35s au lieu de 2min+
-      int fd = vmixClient.fd();
-      if (fd >= 0) {
-        int keepAlive = 1;
-        int keepIdle = 5;       // Première sonde après 5s d'inactivité
-        int keepInterval = 5;   // Sondes toutes les 5s
-        int keepCount = 6;      // Abandon après 6 échecs = ~35s total
-        setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(keepAlive));
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(keepIdle));
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(keepInterval));
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(keepCount));
-        LOG_VMIX("TCP keepalive activé (détection ~35s)");
-      }
-
-      vmixConnected = true;
-      vmixCheckInterval = VMIX_CHECK_INTERVAL;
-      vmixLineBufferLen = 0;
-      setDebugStage(3, "VMIX_CONNECTED");
-      LOG_VMIX("VMix connecté et abonné avec succès");
-      return true;
-    }
-
-    LOG_ERROR("VMix n'a pas répondu - déconnexion");
-    vmixClient.stop();
-    setDebugStage(6, "VMIX_NO_RESPONSE");
-    return false;
+  if (!vmixClient.connect(config.vmix_host, 8099, VMIX_CONNECT_TIMEOUT)) {
+    LOG_ERROR("Échec connexion VMix");
+    return failVMixConnect("VMIX_CONNECT_FAILED");
   }
 
-  LOG_ERROR("Échec connexion VMix");
+  // Les options socket ne s'appliquent qu'une fois le socket créé
+  vmixClient.setNoDelay(true);
+
+  vmixClient.print("SUBSCRIBE TALLY\r\n");
+
+  unsigned long start = millis();
+  bool subscribed = false;
+  char responseBuf[VMIX_MAX_LINE_LENGTH];
+  int responseBufLen = 0;
+
+  while (millis() - start < VMIX_RESPONSE_TIMEOUT && !subscribed) {
+    // Arrêt dès SUBSCRIBE OK : les octets suivants restent dans le socket pour handleVMix()
+    while (!subscribed && vmixClient.available()) {
+      char c = (char)vmixClient.read();
+      if (c == '\r') continue;
+      if (c == '\n') {
+        responseBuf[responseBufLen] = '\0';
+        if (responseBufLen > 0) {
+          if (strncmp(responseBuf, "SUBSCRIBE OK", 12) == 0) {
+            subscribed = true;
+            LOG_VMIX("Réponse reçue: %s", responseBuf);
+          } else if (strncmp(responseBuf, "TALLY OK", 8) == 0) {
+            parseVMix(responseBuf);
+          } else if (strncmp(responseBuf, "SUBSCRIBE ER", 12) == 0) {
+            LOG_ERROR("Abonnement TALLY refuse: %s", responseBuf);
+            return failVMixConnect("VMIX_SUBSCRIBE_FAILED");
+          }
+        }
+        responseBufLen = 0;
+      } else {
+        if (responseBufLen < (int)(sizeof(responseBuf) - 1)) {
+          responseBuf[responseBufLen++] = c;
+        }
+      }
+    }
+
+    if (!subscribed && !vmixClient.connected()) {
+      LOG_VMIX("VMix a fermé la connexion");
+      return failVMixConnect("VMIX_DISCONNECTED");
+    }
+
+    delay(1);
+  }
+
+  if (!subscribed) {
+    LOG_ERROR("VMix n'a pas répondu - déconnexion");
+    return failVMixConnect("VMIX_NO_RESPONSE");
+  }
+
+  // TCP Keepalive : filet de sécurité en plus du heartbeat applicatif
+  int fd = vmixClient.fd();
+  if (fd >= 0) {
+    int keepAlive = 1;
+    int keepIdle = 5;       // Première sonde après 5s d'inactivité
+    int keepInterval = 5;   // Sondes toutes les 5s
+    int keepCount = 6;      // Abandon après 6 échecs = ~35s total
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(keepAlive));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(keepIdle));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(keepInterval));
+    setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(keepCount));
+  }
+
+  // Demande immédiate de l'état courant
+  vmixClient.print("TALLY\r\n");
+
+  vmixConnected = true;
+  vmixCheckInterval = VMIX_CHECK_INTERVAL;
+  vmixLineBufferLen = 0;
+  lastVMixRx = millis();
+  lastVMixHeartbeat = millis();
+  setDebugStage(3, "VMIX_CONNECTED");
+  LOG_VMIX("VMix connecté et abonné avec succès");
+  return true;
+}
+
+void dropVMixConnection(const char* reason) {
+  LOG_VMIX("Connexion VMix perdue (%s)", reason);
+  vmixConnected = false;
   vmixClient.stop();
-  setDebugStage(6, "VMIX_CONNECT_FAILED");
-
-  vmixCheckInterval = min((unsigned long)VMIX_MAX_RETRY_INTERVAL, vmixCheckInterval * 2);
-  LOG_VMIX("Prochaine tentative dans %lu ms", vmixCheckInterval);
-
-  return false;
+  vmixLineBufferLen = 0;
+  setTally(false, false);
+  setDebugStage(6, "VMIX_DISCONNECTED");
 }
 
 void checkVMix() {
-  if (vmixConnected && !vmixClient.connected()) {
-    LOG_VMIX("Connexion VMix perdue");
-    vmixConnected = false;
-    vmixClient.stop();
-    vmixLineBufferLen = 0;
-    setTally(false, false);
-    setDebugStage(6, "VMIX_DISCONNECTED");
+  unsigned long now = millis();
+
+  if (vmixConnected) {
+    if (!vmixClient.connected()) {
+      dropVMixConnection("socket fermé");
+    } else if (now - lastVMixRx > VMIX_RX_TIMEOUT) {
+      // VMix répond toujours à TALLY : un silence prolongé signifie une connexion morte
+      dropVMixConnection("aucune réponse au heartbeat");
+    } else {
+      if (now - lastVMixHeartbeat >= VMIX_HEARTBEAT_INTERVAL) {
+        lastVMixHeartbeat = now;
+        vmixClient.print("TALLY\r\n");
+      }
+      return;
+    }
   }
 
-  if (millis() - lastVMixCheck < vmixCheckInterval) return;
-  lastVMixCheck = millis();
+  if (now - lastVMixCheck < vmixCheckInterval) return;
+  lastVMixCheck = now;
 
-  if (!vmixConnected) {
-    connectVMix();
-  }
+  connectVMix();
 }
 
 void handleVMix() {
-  while (vmixClient.connected() && vmixClient.available()) {
+  while (vmixClient.available()) {
     char c = (char)vmixClient.read();
     if (c == '\r') continue;
     if (c == '\n') {
       vmixLineBuffer[vmixLineBufferLen] = '\0';
       if (vmixLineBufferLen > 0) {
+        lastVMixRx = millis();
         LOG_DEBUG("VMix reçu: %s", vmixLineBuffer);
         parseVMix(vmixLineBuffer);
       }

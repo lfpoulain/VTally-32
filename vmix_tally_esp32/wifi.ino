@@ -10,27 +10,6 @@ void setDebugStage(uint8_t code, const char* label) {
   applyTallyState();
 }
 
-void beginWiFiReconnect(bool forceDisconnect) {
-  if (strlen(config.wifi_ssid) == 0) {
-    return;
-  }
-
-  String networkHostname = sanitizeHostname(config.tally_name);
-  WiFi.setHostname(networkHostname.c_str());
-  WiFi.mode(WIFI_AP_STA);
-
-  if (forceDisconnect) {
-    WiFi.disconnect(true, true);
-    delay(100);
-  }
-
-  WiFi.begin(config.wifi_ssid, config.wifi_password);
-  wifiConnectInProgress = true;
-  wifiConnectAttemptStart = millis();
-  setDebugStage(1, "WIFI_CONNECTING");
-  LOG_NETWORK("Connexion WiFi lancée vers %s", config.wifi_ssid);
-}
-
 String sanitizeHostname(const char* sourceName) {
   String sanitized;
   bool lastWasHyphen = false;
@@ -73,6 +52,12 @@ void setupWiFi() {
   LOG_NETWORK("Configuration WiFi en cours...");
   setDebugStage(1, "WIFI_CONNECTING");
 
+  // Pas d'écriture NVS à chaque begin(), reconnexion gérée par le driver,
+  // et pas de modem sleep (latence et pertes de paquets). setSleep() est
+  // mémorisé par le core et réappliqué à chaque démarrage du STA.
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
   WiFi.mode(WIFI_AP_STA);
 
   String networkHostname = sanitizeHostname(config.tally_name);
@@ -88,11 +73,9 @@ void setupWiFi() {
       LOG_NETWORK("Tentative %d/%d - Connexion à: %s", attempt, WIFI_RETRY_COUNT, config.wifi_ssid);
       WiFi.setHostname(networkHostname.c_str());
       WiFi.mode(WIFI_AP_STA);
-      WiFi.disconnect(true, true);
+      WiFi.disconnect();
       delay(100);
       WiFi.begin(config.wifi_ssid, config.wifi_password);
-      wifiConnectInProgress = true;
-      wifiConnectAttemptStart = millis();
 
       unsigned long start = millis();
       while (WiFi.status() != WL_CONNECTED && (millis() - start) < (WIFI_RETRY_TIMEOUT * 1000)) {
@@ -103,7 +86,6 @@ void setupWiFi() {
 
       if (WiFi.status() == WL_CONNECTED) {
         connected = true;
-        wifiConnectInProgress = false;
         LOG_NETWORK("WiFi connecté: %s (%s)", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
         setDebugStage(8, "WIFI_READY");
 
@@ -112,7 +94,6 @@ void setupWiFi() {
         apActive = false;
         LOG_NETWORK("AP désactivé (WiFi connecté)");
       } else {
-        wifiConnectInProgress = false;
         LOG_WARN("Échec tentative %d/%d", attempt, WIFI_RETRY_COUNT);
         if (attempt < WIFI_RETRY_COUNT) {
           WiFi.disconnect();
@@ -144,40 +125,14 @@ void checkWiFi() {
   lastWiFiCheck = millis();
 
   bool currentConnected = (getWiFiStatusCached() == WL_CONNECTED);
-
-  // Arrêt VMix si WiFi perdu
-  if (!currentConnected && (vmixClient.connected() || vmixConnected)) {
-    vmixClient.stop();
-    vmixConnected = false;
-    vmixLineBufferLen = 0;
-    setTally(false, false);
-    LOG_NETWORK("WiFi perdu - arrêt du Tally");
-  }
-
-  // Gestion de la reconnexion en cours
-  if (wifiConnectInProgress) {
-    if (currentConnected) {
-      wifiConnectInProgress = false;
-      if (apActive) {
-        WiFi.softAPdisconnect(true);
-        WiFi.mode(WIFI_STA);
-        apActive = false;
-        esp_wifi_set_ps(WIFI_PS_NONE);
-        LOG_NETWORK("AP désactivé (WiFi reconnecté)");
-      }
-      setDebugStage(8, "WIFI_READY");
-      return;
-    }
-    if ((millis() - wifiConnectAttemptStart) > (WIFI_RETRY_TIMEOUT * 1000UL)) {
-      wifiConnectInProgress = false;
-      LOG_WARN("Timeout reconnexion WiFi");
-      setDebugStage(9, "WIFI_FAILED");
-    }
-    return;
-  }
+  unsigned long now = millis();
 
   // WiFi connecté : maintenance
   if (currentConnected) {
+    if (wifiLostSince != 0) {
+      LOG_NETWORK("WiFi rétabli après %lu ms", now - wifiLostSince);
+      wifiLostSince = 0;
+    }
     if (debugStageCode == 1 || debugStageCode == 9) {
       setDebugStage(8, "WIFI_READY");
     }
@@ -185,21 +140,37 @@ void checkWiFi() {
       WiFi.softAPdisconnect(true);
       WiFi.mode(WIFI_STA);
       apActive = false;
-      esp_wifi_set_ps(WIFI_PS_NONE);
       LOG_NETWORK("AP désactivé (WiFi reconnecté)");
     }
     return;
   }
 
-  // WiFi déconnecté : tenter une reconnexion
-  if (strlen(config.wifi_ssid) > 0) {
-    LOG_NETWORK("Tentative reconnexion WiFi...");
-    beginWiFiReconnect(true);
+  // Pas de WiFi configuré : l'AP démarré au boot reste actif
+  if (strlen(config.wifi_ssid) == 0) {
+    return;
   }
 
-  if (!apActive) {
+  // WiFi perdu : on laisse l'auto-reconnect du driver agir. La connexion VMix
+  // n'est pas coupée ici, une micro-coupure peut la laisser intacte ; le
+  // watchdog de checkVMix() éteint le tally si VMix ne répond plus.
+  if (wifiLostSince == 0) {
+    wifiLostSince = now;
+    lastWiFiReconnectAttempt = now;
+    setDebugStage(1, "WIFI_CONNECTING");
+    LOG_NETWORK("WiFi perdu - reconnexion automatique en cours");
+    return;
+  }
+
+  if (now - lastWiFiReconnectAttempt >= WIFI_RECONNECT_INTERVAL) {
+    lastWiFiReconnectAttempt = now;
+    LOG_NETWORK("Relance de la connexion WiFi vers %s", config.wifi_ssid);
+    WiFi.reconnect();
+  }
+
+  if (!apActive && now - wifiLostSince >= WIFI_AP_FALLBACK_DELAY) {
     WiFi.mode(WIFI_AP_STA);
     startAP();
-    LOG_NETWORK("AP réactivé (WiFi perdu)");
+    setDebugStage(9, "WIFI_FAILED");
+    LOG_NETWORK("AP réactivé (WiFi perdu depuis %lu s)", (now - wifiLostSince) / 1000);
   }
 }
