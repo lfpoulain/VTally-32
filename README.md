@@ -104,9 +104,11 @@ GND            ---->  GND
 
 ## 🖥️ The web interface
 
-<img src="docs/assets/web-ui.jpg" alt="VTally-32 web interface, VMix & Couleurs tab" width="320" align="right" />
-
 The interface is in French. Its header shows the tally's name, network and live state: **⚠ Déconnecté**, **✓ Connecté**, **🟢 PREVIEW** or **🔴 LIVE**.
+
+<p align="center">
+  <img src="docs/assets/web-ui.jpg" alt="VTally-32 web interface, VMix & Couleurs tab" width="300" />
+</p>
 
 | Tab | What you set |
 |---|---|
@@ -116,8 +118,6 @@ The interface is in French. Its header shows the tally's name, network and live 
 | **Diagnostics** | firmware version, uptime, memory, WiFi mode and signal, vMix link, tally state, LED settings |
 
 Changes to colors and vMix apply at once; the name, hardware and WiFi settings restart the tally.
-
-<br clear="right" />
 
 ### 🔢 Live debug codes (8x8 matrix)
 
