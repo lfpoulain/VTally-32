@@ -1,16 +1,16 @@
 /*
- * VTally-32 - Version 2.0
- * 
+ * VTally-32
+ *
  * Système de tally light professionnel pour VMix
  * - Gestion WiFi native ESP32 avec retry automatique
  * - Protocole TCP VMix officiel avec reconnexion
  * - Interface web moderne avec onglets et scan WiFi
  * - Configuration persistante et validation
  * - Support NeoPixel RGB avec personnalisation
- * 
+ *
  * Auteur: LFPoulain
- * License: MIT
- * Version: 2.0.0
+ * Licence: VTally-32 Non-Commercial Attribution License 1.0 (voir LICENSE)
+ * Version: voir FIRMWARE_VERSION
  * GitHub: https://github.com/lfpoulain/VTally-32
  */
 
